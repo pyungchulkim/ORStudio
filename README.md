@@ -1,5 +1,5 @@
 # ORStudio
-
+<PRE>
 // Ordered Random Studio (ORStudio) is a program that I developed for my 
 // experimentation on color harmony. My typical painting process is that 
 // I first focus on narration and rhythm using lines and shapes in drawing. 
@@ -157,4 +157,4 @@
 // by Pyungchul Kim, 2024
 // http://orderedrandom.com
 //
-
+</PRE>
