@@ -91,6 +91,7 @@ public class ColorTable
 
 
   // Load the conversion tables from CSV files to hash maps
+  @SuppressWarnings("resource")
 	public void loadTable()	
   {
     try {

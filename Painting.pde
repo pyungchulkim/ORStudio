@@ -292,7 +292,7 @@ class Painting
           break;
         }
       }
-      if (mc != null) {  // Similar one is found; add the count.
+      if (mc != null && cnt != null) {  // Similar one is found; add the count.
         histogram.put(mc, cnt + p.getArea());
       }
       else {  // No similar color is found; create a new entry
