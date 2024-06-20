@@ -1,5 +1,9 @@
 # ORStudio
+
+![ORStudio screen shot](screen-shot.png)
+
 <PRE>
+-- extracted from ORStudio.pde file --
 // Ordered Random Studio (ORStudio) is a program that I developed for my 
 // experimentation on color harmony. My typical painting process is that 
 // I first focus on narration and rhythm using lines and shapes in drawing. 
@@ -158,3 +162,6 @@
 // http://orderedrandom.com
 //
 </PRE>
+
+ORStudio is written in Processing 4.3 with Java. No additional libraries need to be installed. 
+
