@@ -77,8 +77,8 @@
 //     limited within the range.
 //
 // ORStudio does not have a manual and I do not intend to create one until necessary.
-// For now, the following example scenario to use, and the source code 
-// (comments as well) should serve the purpose:
+// For now, the source code (comments as well) as well as the following
+// example usage scenario should serve the purpose:
 //
 // - Prepare an image (e.g., PNG) of a drawing to work with. I typically start
 //   with my own charcoal drawing. But, for the sake of demonstration, pick any
@@ -106,10 +106,9 @@
 //   which is set from the loaded image by default. You can change it a different
 //   hue by right-clicking the patch. The new hue is picked up from the
 //   current selected color (big rectangle).
-// - Select "M-TENSION" button and see the master specification for tension,
-//   which is set from the loaded image by default. Blue indicates lowest tension
-//   while red the highest. You can change M-Tension value at the slider bar of
-//   the patch info display.
+// - Select "M-TENSION" button and see the master specification for tension. 
+//   Blue indicates lowest tension while red the highest. 
+//   You can change M-Tension value at the slider bar of the patch info display.
 // - Select red from color wheel. Right-click the left-cell of
 //   the first chords. The color chord will show red being picked and 
 //   several colors within short variance of red will be displayed at the 
@@ -141,18 +140,24 @@
 // - Try other buttons and keys to try:
 //   - "BUILD S" is to build patches based on solid colors. Unlike "BUILD C", a solid
 //     with a distinct color will form a patch, rather than based upon contours.
+//   - "BUILD SC" is to build patches based on solid colors except the area with
+//     the selected color. Then, the selected color area will be broken to patches
+//     using contour as boundary.
 //   - "SAVE IMG" is to save the current viewing image into a PNG file.
+//   - "SAVE PLT" is to save color palette of the current painting as an image file.
 //   - "STORE" is to store the current state of the current painting (master and painted colors).
 //   - "RESTORE" is to restore the last stored painting.
-//   - While viewing the master (M-GRAY, M-HUE, M-TENSION), the following key
-//     can be used to edit the master specification:
+//   - "THEME" is to quickly preview all colors in the set of color chords
+//   - While viewing the source image or the master (M-GRAY, M-HUE, M-TENSION), 
+//     the following key can be used to edit the master specification:
 //      - 'p' or 'P': master picks up the specs from the current painting;
 //      - 'c' or 'C': master gets reset;
 //      - '+' or '-': scale up or down the master specs (gray or tension only)
 //      - '>' or '<': shift up or down the master specs (gray or tension only)
 //      - 'r' or 'R': replace a hue using the last two colors in the color palette
 //      - 'control-z': under the last change
-//   - "THEME" is to quickly preview all colors in the set of color chords
+//     Note that these may not reflect recent changes. A good place to see key
+//     and mouse mappings is doAction() and keyPressed() in the code.
 //
 // by Pyungchul Kim, 2024
 // http://orderedrandom.com
@@ -264,12 +269,13 @@ final int areaPlot = 4;
 final int areaLoad = 10;
 final int areaBuildC = 11;
 final int areaBuildS = 12;
-final int areaOpen = 13;
-final int areaSave = 14;
-final int areaSaveImg = 15;
-final int areaSavePlt = 16;
-final int areaStore = 17;
-final int areaRestore = 18;
+final int areaBuildSC = 13;
+final int areaOpen = 14;
+final int areaSave = 15;
+final int areaSaveImg = 16;
+final int areaSavePlt = 17;
+final int areaStore = 18;
+final int areaRestore = 19;
 
 // Theme/Painting menu
 final int areaTheme = 30;
@@ -373,7 +379,8 @@ void doAction(int area)
   drawTextBox("", msgX, msgY, msgWidth, msgHeight);  // erase the previous status msg
   
   // Any button to use image area will pause painting
-  if (area == areaLoad    || area == areaBuildC  || area == areaBuildS ||
+  if (area == areaLoad    || area == areaBuildC  || 
+      area == areaBuildS  || area == areaBuildSC ||
       area == areaOpen    || area == areaSave    ||
       area == areaSaveImg || area == areaSavePlt ||
       area == areaStore   || area == areaRestore ||
@@ -418,14 +425,17 @@ void doAction(int area)
       
     case areaBuildC:  // Build the color patches
     case areaBuildS:
+    case areaBuildSC:
       if (mouseButton == LEFT && imgInput != null && imgWork != null) {
         // Build color patches from original image to avoid any loss in contour pixels.
         cursor(WAIT);
         Painting p;
         if (area == areaBuildC)
-          p = buildPatchesFromContour(imgInput, colorSelected, imgWork);
+          p = buildPatchesFromContour(imgInput, 0, colorSelected, imgWork);
+        else if (area == areaBuildS)
+          p = buildPatchesFromSolid(imgInput, 0, imgWork);
         else
-          p = buildPatchesFromSolid(imgInput, imgWork);
+          p = buildPatchesFromSolidContour(imgInput, colorSelected, imgWork);
         cursor(ARROW);
         imgInput = null;  // do not build it from again
        
@@ -951,18 +961,20 @@ void drawButtons()
      .setPosition(btnMasterX, btnMasterY + (btnHeight + 10) * 1).setSize(btnWidth, btnHeight);
   cp5.addButton("btnBuildS").setLabel("BUILD S").setValue(areaBuildS)
      .setPosition(btnMasterX, btnMasterY + (btnHeight + 10) * 2).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnOpen").setLabel("OPEN").setValue(areaOpen)
+  cp5.addButton("btnBuildSC").setLabel("BUILD SC").setValue(areaBuildSC)
      .setPosition(btnMasterX, btnMasterY + (btnHeight + 10) * 3).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnSave").setLabel("SAVE").setValue(areaSave)
+  cp5.addButton("btnOpen").setLabel("OPEN").setValue(areaOpen)
      .setPosition(btnMasterX, btnMasterY + (btnHeight + 10) * 4).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnSaveImg").setLabel("SAVE IMG").setValue(areaSaveImg)
+  cp5.addButton("btnSave").setLabel("SAVE").setValue(areaSave)
      .setPosition(btnMasterX, btnMasterY + (btnHeight + 10) * 5).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnSavePlt").setLabel("SAVE PLT").setValue(areaSavePlt)
+  cp5.addButton("btnSaveImg").setLabel("SAVE IMG").setValue(areaSaveImg)
      .setPosition(btnMasterX, btnMasterY + (btnHeight + 10) * 6).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnStore").setLabel("STORE").setValue(areaStore)
+  cp5.addButton("btnSavePlt").setLabel("SAVE PLT").setValue(areaSavePlt)
      .setPosition(btnMasterX, btnMasterY + (btnHeight + 10) * 7).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnRestore").setLabel("RESTORE").setValue(areaRestore)
+  cp5.addButton("btnStore").setLabel("STORE").setValue(areaStore)
      .setPosition(btnMasterX, btnMasterY + (btnHeight + 10) * 8).setSize(btnWidth, btnHeight);
+  cp5.addButton("btnRestore").setLabel("RESTORE").setValue(areaRestore)
+     .setPosition(btnMasterX, btnMasterY + (btnHeight + 10) * 9).setSize(btnWidth, btnHeight);
   
   // Buttons for chords theme
   cp5.addButton("btnTheme").setLabel("THEME").setValue(areaTheme)
@@ -1001,6 +1013,7 @@ void drawButtons()
 void btnLoad(int area) { doAction(area); }
 void btnBuildC(int area) { doAction(area); }
 void btnBuildS(int area) { doAction(area); }
+void btnBuildSC(int area) { doAction(area); }
 void btnOpen(int area) { doAction(area); }
 void btnSave(int area) { doAction(area); }
 void btnSaveImg(int area) { doAction(area); }

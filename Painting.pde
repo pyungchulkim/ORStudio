@@ -697,10 +697,12 @@ class Painting
 }
 
 // Build a set of color patches from the image.
-// Each patch must be contoured with cContour color.
+// If cBase is given non-zero, only cBase colored area will be considered.
+// Boundary of a patch is identified by non-cBase color if cBase is given,
+// or cContour otherwise.
 // Patches are first built from imgSrc and then
 // all coordinates are scaled to imgScaleTo
-Painting buildPatchesFromContour(PImage imgSrc, color cContour, PImage imgScaleTo) 
+Painting buildPatchesFromContour(PImage imgSrc, color cBase, color cContour, PImage imgScaleTo) 
 {
   color cVisited = color(128);  // use gray to mark visited while traversal
   color cDone = color(255);  // use white to mark done after a patch is done
@@ -709,10 +711,13 @@ Painting buildPatchesFromContour(PImage imgSrc, color cContour, PImage imgScaleT
 
   for (int i = 0; i < imgSrc.width; i++) {
     for (int j = 0; j < imgSrc.height; j++) {
-      color s = imgSrc.get(i, j);
       color m = imgMark.get(i, j);
-      if (m == cDone || rgbDistance(s, cContour) < contourColorThreshold)
-        continue;  // done in previous patch or a contour line
+      if (m == cDone)
+        continue;  // done in previous patch
+      color s = imgSrc.get(i, j);
+      if (cBase != 0 && rgbDistance(s, cBase) >= contourColorThreshold ||
+          cBase == 0 && rgbDistance(s, cContour) < contourColorThreshold)
+        continue;  // it's the patch boundary
 
       // Create a new patch and add the points and contour to the patch
       // using floodfill algorithm.
@@ -725,13 +730,16 @@ Painting buildPatchesFromContour(PImage imgSrc, color cContour, PImage imgScaleT
         PVector pv = ps.pop();
         int px = (int)pv.x;
         int py = (int)pv.y;
-        s = imgSrc.get(px, py);
+        
         m = imgMark.get(px, py);
         if (m == cVisited)
           continue;  // Already visited this pixel.
           
-        if (rgbDistance(s, cContour) < contourColorThreshold ||
-            px == 0 || px == imgSrc.width - 1 || py == 0 || py == imgSrc.height - 1) {
+        s = imgSrc.get(px, py);
+        if (cBase != 0 && rgbDistance(s, cBase) >= contourColorThreshold ||
+            cBase == 0 && rgbDistance(s, cContour) < contourColorThreshold ||
+            px == 0 || px == imgSrc.width - 1 || py == 0 || py == imgSrc.height - 1) 
+        {
           // Has reached the contour or the image boundary
           contourPoints.add(pv);
         }
@@ -781,11 +789,11 @@ Painting buildPatchesFromContour(PImage imgSrc, color cContour, PImage imgScaleT
   return new Painting(imgScaleTo.width, imgScaleTo.height, patches, centroid);
 }
 
-// Build a set of color patches from the image.
+// Build a set of color patches from the image, excluding the given colored area.
 // Each distinct color creates a separate patch.
 // Patches are first built from imgSrc and then
 // all coordinates are scaled to imgScaleTo
-Painting buildPatchesFromSolid(PImage imgSrc, PImage imgScaleTo) 
+Painting buildPatchesFromSolid(PImage imgSrc, color cSkip, PImage imgScaleTo) 
 {
   ArrayList<ColorPatch> patches = new ArrayList<ColorPatch>();
   HashMap<Integer, ArrayList<PVector> > map = new HashMap<Integer, ArrayList<PVector> >();
@@ -793,6 +801,9 @@ Painting buildPatchesFromSolid(PImage imgSrc, PImage imgScaleTo)
   for (int i = 0; i < imgSrc.width; i++) {
     for (int j = 0; j < imgSrc.height; j++) {
       Integer c = imgSrc.get(i, j);
+      if (cSkip != 0 && rgbDistance(c, cSkip) < contourColorThreshold)
+        continue;  // skip this color
+        
       // Skip an island pixel - this will reduce # of patches to cover trivial
       // pixels that might have been created by gradation of paint brush tools.
       if (c != imgSrc.get(i - 1, j - 1) && c != imgSrc.get(i, j - 1) && c != imgSrc.get(i + 1, j - 1) &&
@@ -843,6 +854,31 @@ Painting buildPatchesFromSolid(PImage imgSrc, PImage imgScaleTo)
   }
   
   return new Painting(imgScaleTo.width, imgScaleTo.height, patches, centroid);
+}
+
+// Build a set of color patches from the image.
+// First, it creates patches for all solid color areas except cBase color.
+// Then, it create patches for cBase color area using non-cBase color as boundary.
+// Patches are first built from imgSrc and then
+// all coordinates are scaled to imgScaleTo
+Painting buildPatchesFromSolidContour(PImage imgSrc, color cBase, PImage imgScaleTo) 
+{
+  // Build patches for all solid except cBase-colored area
+  Painting pSolid = buildPatchesFromSolid(imgSrc, cBase, imgScaleTo);
+  Painting pContour = buildPatchesFromContour(imgSrc, cBase, 0, imgScaleTo);
+  
+  // Merge the two set of patches
+  pSolid.patches.addAll(pContour.patches);
+  
+  // Calculate the centroid
+  float areaSum = 0;
+  MunsellColor centroid = null;
+  for (ColorPatch p : pSolid.patches) {
+    centroid = (centroid == null) ? p.mColor : centroid.getMixture(p.mColor, p.getArea() / areaSum);
+    areaSum += p.getArea();
+  }
+  
+  return new Painting(pSolid.imgWidth, pSolid.imgHeight, pSolid.patches, centroid);
 }
 
 // Euclidean distance between the two RGB colors
