@@ -2,6 +2,15 @@
 final int minPatchSize = 30;  // min # of pixels to form a patch
 final int contourColorThreshold = 60;  // RGB diff to identify contour line
 
+// Constants for color transition types
+final int transDefault = 0;
+final int transFixed = 1;
+final int transComplementary = 2;
+final int transHueVariant = 3;
+final int transChromaVariant = 4;
+final int transValueVariant = 5;
+final int transAnalogous = 6;
+
 // Class for an individual Color Patch
 class ColorPatch
 {
@@ -11,11 +20,18 @@ class ColorPatch
   public float masterGray;  // master gray level. 0 if not specified
   public float masterHue;  // master hue degree. negative if not specified
   public float masterTension;  // master tension. 0 if not specified
+  public String masterTransition;  // master transition spec
   public MunsellColor mColor; // painted Munsell color of the patch - always one from the quantized map (mToRGB)
   public color rgbColor; // RGB color of mColor for display
   public float gGap;  // Color Gap in terms of gray level against the centroid
   public float cGap;  // Color Gap in terms of color against the centroid
+
+  // transient - populated on-demand for performance. no need to serialize
   public PVector coord;  // Color Coordinate
+  public boolean transParsed;  // flag if transition parameters have been parsed.
+  public int transParam1;  // 1st transition parameter
+  public int transParam2;  // 2nd transition parameter
+  public int transParam3;  // 3rd transition parameter
   
   // default constructor
   public ColorPatch() {}
@@ -43,6 +59,7 @@ class ColorPatch
     masterGray = 0;
     masterHue = -1;
     masterTension = 0;
+    masterTransition = "";
 
     // Calculate average color
     float rSum = 0;
@@ -58,7 +75,7 @@ class ColorPatch
       bSum += blue(c);
       np++;
     }
-    setColor(color(rSum / np, gSum / np, bSum / np));
+    setColor(colorTable.rgbToMunsell(color(rSum / np, gSum / np, bSum / np)));
     
     // Make sure the value of the color is within [2, 18] for painting purpose.
     // Value outside this range won't be honored when selecting a color in painting.
@@ -69,7 +86,7 @@ class ColorPatch
     }
 
     gGap = cGap = 0; // set by updateGap() later
-    coord = null; // use as coordinate workspace later in analysis
+    transParsed = false;
   }
   
   // Copy constructor for a shallow copy to experiment all while keeping the shape and location
@@ -81,11 +98,12 @@ class ColorPatch
     masterGray = p.masterGray;
     masterHue = p.masterHue;
     masterTension = p.masterTension;
+    masterTransition = String.valueOf(p.masterTransition);
     mColor = new MunsellColor(p.mColor);
     rgbColor = p.rgbColor;
     gGap = p.gGap; 
     cGap = p.cGap;
-    coord = null;  // no need to copy as it is used as workspace as needed
+    transParsed = false;
   }
   
   // Serialize to save
@@ -97,6 +115,7 @@ class ColorPatch
     oos.writeFloat(masterGray);
     oos.writeFloat(masterHue);
     oos.writeFloat(masterTension);
+    oos.writeObject(masterTransition);
     mColor.Serialize(oos);
     oos.writeInt(rgbColor);
     oos.writeFloat(gGap);
@@ -112,37 +131,122 @@ class ColorPatch
     masterGray = ois.readFloat();
     masterHue = ois.readFloat();
     masterTension = ois.readFloat();
+    masterTransition = (String)ois.readObject();
     mColor = new MunsellColor(); mColor.Deserialize(ois);
     rgbColor = ois.readInt();
     gGap = ois.readFloat();
     cGap = ois.readFloat();
+    transParsed = false;
   }
   
-  // Set the color from an RGB color
-  public void setColor(color c)
-  {
-    setColor(colorTable.rgbToMunsell(c));
-  }
-  // Set the color from a Munsell color
-  public void setColor(MunsellColor mc)
+  // Set the color from a Munsell color. Return if changed.
+  public boolean setColor(MunsellColor mc)
   {
     // set RGB from the quantized mapping table to make sure 
     // the RGB is always the one driven from the mapping table.
-    rgbColor = colorTable.munsellToRGB(mc);
+    color rgbColorNew = colorTable.munsellToRGB(mc);
     // Now, we set quantized Munsell color for the RGB
-    mColor = new MunsellColor(colorTable.rgbToMunsell(rgbColor));
+    MunsellColor mColorNew = new MunsellColor(colorTable.rgbToMunsell(rgbColorNew));
+    boolean bChanged = false;
+    if (rgbColor != rgbColorNew || !mColor.isEqual(mColorNew)) {
+      rgbColor = rgbColorNew;
+      mColor = mColorNew;
+      bChanged = true;
+    }
+    return bChanged;
   }
   
-  // Set master gray from an RGB color
-  public void setMasterGray(color c)
+  // Set master gray from a Munsell color. Return true if changed
+  public boolean setMasterGray(MunsellColor mc)
   {
-    masterGray = colorTable.rgbToMunsell(c).value;
+    boolean bChanged = false;
+    if (masterGray != mc.value) {
+      masterGray = mc.value;
+      bChanged = true;
+    }
+    return bChanged;
   }
-  // Set master hue from an RGB color
-  public void setMasterHue(color c)
+  
+  // Set master hue from a Munsell color. Return true if changed
+  public boolean setMasterHue(MunsellColor mc)
   {
-    MunsellColor mc = colorTable.rgbToMunsell(c);
-    masterHue = mc.isGray() ? -1 : mc.hueDegree;
+    float masterHueNew = mc.isGray() ? -1 : mc.hueDegree;
+    boolean bChanged = false;
+    if (masterHue != masterHueNew) {
+      masterHue = masterHueNew;
+      bChanged = true;
+    }
+    return bChanged;
+  }
+  
+  // Set master tension. Return true if changed
+  public boolean setMasterTension(float t)
+  {
+    boolean bChanged = false;
+    if (masterTension != t) {
+      masterTension = t;
+      bChanged = true;
+    }
+    return bChanged;
+  }
+  
+  // Set master transition. Return true if changed
+  public boolean setMasterTransition(String str)
+  {
+    String masterTransitionNew = trim(String.valueOf(str)).toUpperCase();
+    boolean bChanged = false;
+    if (!masterTransition.equals(masterTransitionNew)) {
+      masterTransition = masterTransitionNew;
+      bChanged = true;
+    }
+    return bChanged;
+  }
+
+  // Parse master transition string into parameters.
+  // The following are possible formats for transition string:
+  //  "" (empty string) - default (unspecified). arbitrary transition.
+  //  "F/V/C" - Fixed color with specified value and chroma in the sphere.
+  //  "C/ref[/value]" - Complementary. Transition to opposite ref in the sphere
+  //                    with optional value
+  //  "H/ref/delta" - Move hue by delta with the same value/chroma from ref.
+  //  "M/ref/delta" - Move chroma by delta with the same hue/value from ref.
+  //  "V/ref/delta" - Move value by delta with the same hue/chroma from ref.
+  //  "A/ref/delta" - Move by delta from ref in any direction in the sphere.
+  public void parseTransParams()
+  {
+    if (transParsed)
+      return;  // done already
+
+    transParam1 = transDefault;
+    transParam2 = transParam3 = 0;
+    
+    try {
+      // get the 1st param - transition type
+      String[] data = masterTransition.split("/");
+      switch (data[0]) {
+        default:
+        case "":  transParam1 = transDefault; break;
+        case "F": transParam1 = transFixed; break;
+        case "C": transParam1 = transComplementary; break;
+        case "H": transParam1 = transHueVariant; break;
+        case "M": transParam1 = transChromaVariant; break;
+        case "V": transParam1 = transValueVariant; break;
+        case "A": transParam1 = transAnalogous; break;
+      }    
+      // get the remaing parameters
+      if (transParam1 != transDefault) {
+        transParam2 = Integer.parseInt(data[1]);
+        if (transParam1 == transComplementary && data.length < 3)
+          transParam3 = -1;  // take default for complementary
+        else
+          transParam3 = Integer.parseInt(data[2]);
+      }
+    } catch (Exception e) {
+      transParam1 = transDefault;
+      transParam2 = transParam3 = 0;
+    }
+    
+    transParsed = true;
   }
   
   // Get patch area
@@ -184,7 +288,7 @@ class ColorPatch
     }
     return false;
   }
-  
+   
   // Draw the color patch to the image with local color
   public void draw(PImage img, int kind)
   {
@@ -196,10 +300,12 @@ class ColorPatch
         drawPoints(img, colorTable.munsellToRGB(new MunsellColor(0, 0, masterGray)));
         break;
       case areaViewMHue: // Draw master hue of the patches
-        float ch = (masterHue < 0) ? 0 : 12;
+        // use value=12, chroma=10 to cover all hues
+        float v = 12;
+        float ch = (masterHue < 0) ? 0 : 10;
         float x = ch * cos(radians(masterHue));
         float y = ch * sin(radians(masterHue));
-        drawPoints(img, colorTable.munsellToRGB(new MunsellColor(x, y, 10)));
+        drawPoints(img, colorTable.munsellToRGB(new MunsellColor(x, y, v)));
         break;
       case areaViewTension: // Draw tension of the local color
       case areaViewMTension: // Draw master tension
@@ -214,6 +320,7 @@ class ColorPatch
         float b = (t >= 90) ? 255 * -cos(radians(t)) : 0;
         drawPoints(img, color(r, g, b));
         break;
+      case areaViewMTransition: // Draw master transition - handled in painting level
       default:
         break;
     }

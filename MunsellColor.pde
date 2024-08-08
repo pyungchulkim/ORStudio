@@ -7,7 +7,7 @@
 // so that the lightness has more discriminative power in my project.
 // Chromas are from 0 (pure gray) to pure color and each hue has different
 // max chroma. Although in theory, there is no max value in chroma, in reality
-// of pigments, 10 seems to be saturated and 20 seems to be affordable max.
+// of pigments, 10-18 seems to be saturated and 20 seems to be affordable max.
 // A Munsell color is denoted as [hue number][hue code][value]/[chroma]. 
 // For instance, 5.0R8/10 represents a color of hue code is R (red), 
 // hue number within the hue code is 5.0 (center), value is 8 and chroma is 10.
@@ -76,9 +76,9 @@
 // The 10 hue codes covering 360 degrees.
 // The hue number within a hue code ranges up to 10.0
 final String hueCodes[] = { "R", "YR", "Y", "GY", "G", "BG", "B", "PB", "P", "RP"};
-final int hueCodesMax = hueCodes.length;
+final int hueCodesNum = hueCodes.length;
 final float hueNumberMax = 10.0;
-final float hueDegreePerCode = 360 / hueCodesMax;
+final float hueDegreePerCode = 360 / hueCodesNum;
 final int hueSectorsPerCode = 4;
 final float hueDegreePerSector = hueDegreePerCode / hueSectorsPerCode;
 
@@ -88,11 +88,13 @@ final MunsellColor munsellBlack = new MunsellColor(0, 0, 0);
 class MunsellColor
 {
   public String hueCode;  // hue code such as "R", "YR", and so on.
-  public float hueNumber; // hue number within the hueCode. [0, 10]
-  public float hueDegree; // hue as degree in the hue circle. [0, 360]
-  public float value;  // value. [0-20]
-  public float chroma;  // chroma. [0-40]. unlimited in theory, though.
-  public PVector coord;  // coordinate in the sphere - populated on-demand for performance
+  public float hueNumber; // hue number within the hueCode. [0, 10)
+  public float hueDegree; // hue as degree in the hue circle. [0, 360)
+  public float value;  // value. [0, 20]
+  public float chroma;  // chroma. [0, Inf). practically [0, 18], though.
+  
+  // transient - populated on-demand for performance. no need to serialize
+  public PVector coord;  // coordinate in the sphere
 
   // default constructor
   public MunsellColor() {}
@@ -106,14 +108,15 @@ class MunsellColor
       if (hc.equals(hueCodes[hi]))
         break;
     }
-    assert hi < hueCodesMax : "Invalid hueCode";
-    assert hn >= 0 && hn <= hueNumberMax : "Invalid hueNumber"; 
+    assert hi < hueCodesNum : "Invalid hueCode";
+    assert hn >= 0 && hn < hueNumberMax : "Invalid hueNumber"; 
 
-    hueCode = hc;
+    hueCode = hueCodes[hi];
     hueNumber = hn;
     hueDegree = hi * hueDegreePerCode + hn * (hueDegreePerCode / hueNumberMax);
-    value = v;
-    chroma = c;
+    assert hueDegree < 360 : "Invalid hueDegree"; 
+    value = min(20, max(0, v));
+    chroma = max(0, c);
     coord = null;
   }
   
@@ -140,17 +143,6 @@ class MunsellColor
     this(pv.x, pv.y, pv.z);
   }
   
-  // Copy to
-  public void copyTo(MunsellColor mc)
-  {
-    mc.hueCode = hueCode;
-    mc.hueNumber = hueNumber;
-    mc.hueDegree = hueDegree;
-    mc.value = value;
-    mc.chroma = chroma;
-    mc.coord = null;
-  }
-
   // Serialize to save
   public void Serialize(ObjectOutputStream oos) throws IOException
   {
@@ -214,6 +206,35 @@ class MunsellColor
     PVector c3 = c1.copy().add(PVector.mult(c2, ratio)).div(1 + ratio);
     return new MunsellColor(c3);
   }
+  
+  // Obtain a complementary color: the opposite location in the sphere.
+  // The value of the complementary is set to n if valid, opposite otherwise.
+  public MunsellColor getComplementary(float n)
+  {
+    PVector cd = getCoordinate();
+    float v = (n >= 0 && n <= 20) ? n : 10 - (cd.z - 10);
+    return new MunsellColor(-cd.x, -cd.y, v);
+  }
+  // Obtain a hue-variant: rotate hue by delta within the same value/chroma
+  // Each unit in 'delta' indicates one in 40 hue sectors (hueDegreePerSector)
+  public MunsellColor getHueVariant(int delta)
+  {
+    float a = hueDegree + delta * hueDegreePerSector;
+    if (a >= 360) a -= 360;
+    if (a < 0) a += 360;
+    float r = radians(a);
+    return new MunsellColor(chroma * cos(r), chroma * sin(r), value);
+  }
+  // Obtain a chroma-variant: move chroma by delta within the same hue/value
+  public MunsellColor getChromaVariant(int delta)
+  {
+    return new MunsellColor(hueCode, hueNumber, value, chroma + delta);
+  }
+  // Obtain a value-variant: move value by delta within the same hue/chroma
+  public MunsellColor getValueVariant(int delta)
+  {
+    return new MunsellColor(hueCode, hueNumber, value + delta, chroma); //<>//
+  }
 }
 
 // Get hue code at the current x, y location of hue circle
@@ -221,10 +242,10 @@ String getMunsellHueCode(float x, float y)
 {
   // Obtain the angle in degree
   float a = degrees(atan2(y, x));
-  if (a < 0) a = 360 + a;  // [0, 360)
+  if (a < 0) a += 360;  // [0, 360)
 
   // Obtain hue code
-  int hi = min(hueCodesMax -1, (int)(a / hueDegreePerCode));
+  int hi = (int)(a / hueDegreePerCode);
   return hueCodes[hi];
 }
 
@@ -233,7 +254,7 @@ float getMunsellHueNumber(float x, float y)
 {
   // Obtain the angle in degree
   float a = degrees(atan2(y, x));
-  if (a < 0) a = 360 + a;  // [0, 360)
+  if (a < 0) a += 360;  // [0, 360)
 
   // Obtain hue number
   float hn = a % hueDegreePerCode;  // [0, hueDegreePerCode)
@@ -241,9 +262,10 @@ float getMunsellHueNumber(float x, float y)
   return hn;
 }
 
-// Draw Munsell Value/Chroma spectrum at <x, y> with w x h for the selected hue.
+// Draw Munsell Value/Chroma spectrum at <x, y> with w x h for the color
+// and highlight the selected color cell
 // I skip the colors that the mapping table (mToRGB) does not have an RGB entry for
-void drawMunsellValueChroma(String hueCode, float hueNumber, float x, float y, float w, float h) 
+void drawMunsellValueChroma(MunsellColor mcSelected, float x, float y, float w, float h) 
 {
   float cellW = w / 11;  // cell width for 11 chromas
   float cellH = h / 11;  // cell height for 11 values
@@ -251,7 +273,7 @@ void drawMunsellValueChroma(String hueCode, float hueNumber, float x, float y, f
 
   for (int v = 0; v < 11; v++) {
     for (int c = 0; c < 11; c++) {
-      MunsellColor mc = new MunsellColor(hueCode, hueNumber, v * 2, c * 2);
+      MunsellColor mc = new MunsellColor(mcSelected.hueCode, mcSelected.hueNumber, v * 2, c * 2);
       color pc = colorBG;
       if (colorTable.isMunsellKeyInMap(mc)) {
         pc = colorTable.munsellToRGB(mc);
@@ -260,52 +282,45 @@ void drawMunsellValueChroma(String hueCode, float hueNumber, float x, float y, f
       rect(x + c * cellW, y + (10 - v) * cellH, cellW, cellH);
     }
   }
-}
 
-// Draw Munsell Value/Chroma spectrum at <x, y> with w x h and
-// highlight the color cell
-void drawMunsellValueChroma(MunsellColor mc, float x, float y, float w, float h) 
-{
-  drawMunsellValueChroma(mc.hueCode, mc.hueNumber, x, y, w, h);
-
-  float cellW = w / 11;  // cell width for 11 chromas
-  float cellH = h / 11;  // cell height for 11 values
+  // highlight the color cell
   stroke(colorEdge); noFill();
-  rect(x + (mc.chroma / 2) * cellW, y + (10 - (mc.value / 2)) * cellH, cellW, cellH);
+  rect(x + (mcSelected.chroma / 2) * cellW, y + (10 - (mcSelected.value / 2)) * cellH, cellW, cellH);
 }
 
 // Draw Munsell Hue as a circle at <x, y> with radius r.
-void drawMunsellHueCircle(float x, float y, float r) 
-{  
+// Then, highlight the hue of the given color, if given
+void drawMunsellHueCircle(float x, float y, float r, MunsellColor mcHightlight) 
+{
   // Quantize the hue circle for display:
   // Each hue code has 4 sectors with hue code 2.5, 5.0, 7.5, 10.
 
-  // Values of highest chromatic color for each hue.
+  // Use different values to display each hue sector to maximize distinctness of hue.
   // These numbers are chosen from the conversion table: mToRGB.
   final float values[] = {
     /* R  */ 10,10,10,10,
-    /* YR */ 12,12,14,14,
-    /* Y  */ 14,16,16,16,
-    /* GY */ 14,14,14,14,
-    /* G  */ 12,12,12,12,
+    /* YR */ 10,12,12,14,
+    /* Y  */ 14,14,16,16,
+    /* GY */ 16,14,14,14,
+    /* G  */ 14,12,12,12,
     /* BG */ 12,12,12,12,
     /* B  */ 12,12,12,12,
-    /* PB */ 10,10, 8, 8,
+    /* PB */ 12,10,10, 8,
     /* P  */  8, 8, 8, 8,
-    /* RP */ 10,10,10,10
+    /* RP */  8,10,10,10
   };
 
   stroke(colorBG);
   beginShape(TRIANGLE_FAN);
   vertex(x, y);  // start from the center
-  float angle = hueDegreePerSector / 2;
+  float angle = 0;
   PVector p = null;
   for (int i = 0; i < hueCodes.length; i++) {
     for (int j = 0; j < hueSectorsPerCode; j++) {
-      float hn = (j + 1) * 2.5;
+      float hn = j * 2.5;
       float v = values[i * hueSectorsPerCode + j];
       MunsellColor mc = new MunsellColor(hueCodes[i], hn, v, 
-                colorTable.getMaxChroma(hn, hueCodes[i], v));
+                colorTable.getMaxChroma(hueCodes[i], hn, v));
       p = PVector.fromAngle(radians(angle)).mult(r);
       vertex(x + p.x, y + p.y);
       fill(colorTable.munsellToRGB(mc));
@@ -315,6 +330,18 @@ void drawMunsellHueCircle(float x, float y, float r)
   p = PVector.fromAngle(radians(angle)).mult(r);
   vertex(x + p.x, y + p.y);  // the last closing vertex
   endShape();
+
+  // highlight the given color
+  if (mcHightlight != null && !mcHightlight.isGray()) {
+    beginShape(TRIANGLE_FAN);
+    stroke(colorEdge); noFill();
+    vertex(x, y);  // start from the center
+    p = PVector.fromAngle(radians(mcHightlight.hueDegree)).mult(r);
+    vertex(x + p.x, y + p.y);
+    p = PVector.fromAngle(radians(mcHightlight.hueDegree + hueDegreePerSector)).mult(r);
+    vertex(x + p.x, y + p.y);
+    endShape();
+  }
 }
 
 // Generate colors that are within variation (radius) of the center in terms of

@@ -203,16 +203,16 @@ final int cY = hY - hRadius + 5;
 final int cWidth = 140;
 final int cHeight = 140;
 
+// Color points plot box
+final int plotX = vcX + vcWidth + 20;
+final int plotY = btnMasterY;
+final int plotSize = 300;
+
 // Patch info box
 final int infoX = vcX + vcWidth + 20;
-final int infoY = btnMasterY;
-final int infoWidth = 300;
+final int infoY = plotY + plotSize + 70;
+final int infoWidth = plotSize;
 final int infoHeight = 100;
-
-// Color points plot box
-final int plotX = infoX;
-final int plotY = infoY + infoHeight + 60;
-final int plotSize = infoWidth;
 
 // Color chord controls and colors
 final int chordX = btnMasterX;
@@ -280,7 +280,6 @@ final int areaRestore = 19;
 // Theme/Painting menu
 final int areaTheme = 30;
 final int areaPaint = 31;
-final int areaPaintForced = 32;
 final int areaPause = 33;
 final int areaResume = 34;
 final int areaReset = 35;
@@ -293,14 +292,12 @@ final int areaViewTension = 41;
 final int areaViewMGray = 42;
 final int areaViewMHue = 43;
 final int areaViewMTension = 44;
+final int areaViewMTransition = 45;
 
 final int areaChord = 50;
 final int areaChordColor = 51;
 
 final int areaImage = 100;
-
-// Other constants
-final boolean debug = true;
 
 // Predefined colors
 final color colorBG = color(0,0,0);  // background color
@@ -312,12 +309,11 @@ ControlP5 cp5 = null;  // Control P5 for buttons, sliders, etc
 String pathName = null;  // file name from the dialog
 PImage imgInput = null;  // original input image
 PImage imgWork = null;  // image at work
-color colorSelected = color(220,63,78);  // selected color. 5.0R-10-20 by default
+color colorSelected = color(220,63,78);  // selected color. 5.0R-10-14 by default
 color[] colorPalette = { color(255), color(0), color(255,0,0), color(0,255,0), color(0,0,255), 
                          color(255,255,0), color(255,0,255), color(0,255,255), colorBG, colorBG }; // color palette
 ColorTable colorTable = new ColorTable();  // RGB/Munsell conversion table
 PFont fontText = null; // text font througout
-boolean bUpdateStats = false;  // indicate if any patch has changed
 float degreeRotateX = 90;  // degree to rotate X-axis of the color points plot
 float degreeRotateZ = 0;  // degree to rotate Z-axis of the color points plot
 int prevMouseX = -1;  // previous mouseX to handle dragging
@@ -328,15 +324,19 @@ Painter painter = null;  // the painter based upon genetic algorithm
 int viewMode = areaViewColors; // indicate what is showing at the image area
 ArrayList<Painting> paintings = null;  // the current painting collection
 Painting storedPainting = null; // the stored painting to restore to later
-boolean bPause = false;  // painting paused
 int currPaintingIdx = -1;  // current painting index
 int currPatchIdx = -1;  // current patch being viewed and edited
+int lastPatchIdx = -1;  // last patch on display
 int undoPaintingIdx = -1;  // index of the painting saved for undo
 Stack<Painting> undoPaintings = null;  // paintings save for undo
 int maxUndoPaintings = 200;  // max # of undo operations
+boolean bPause = false;  // painting paused
+boolean bDrag = false;  // mouse being dragged
+boolean bShift = false;  // shift-key is pressed
+boolean debug = true;  // for debugging
 
 // Adjustable control parameters for analysis and new paintings generation
-int ctrlNumPaintings = 100;  // # of paintings in a collection
+int ctrlNumPaintings = 10;  // # of paintings in a collection
 MunsellColor ctrlCentroid = null;  // centroid color for painting
 float ctrlHueVariance = 20;  // hue range from master hue
 float ctrlTensionScale = 1.0;  // scale to adjust master tension
@@ -367,8 +367,8 @@ void setup()
   // draw all static graphic assets here and
   // let draw() take care of all dynamic contents
   drawButtons();  // buttons
-  drawMunsellValueChroma("R", 5.0, vcX, vcY, vcWidth, vcHeight);  // value-chroma spectrum
-  drawMunsellHueCircle(hX, hY, hRadius);  // hue circle
+  drawMunsellValueChroma(colorTable.rgbToMunsell(colorSelected), vcX, vcY, vcWidth, vcHeight);  // value-chroma spectrum
+  drawMunsellHueCircle(hX, hY, hRadius, null);  // hue circle
   drawSelectedColor();  // current color selected
   drawColorPalette();  // color palette
 }
@@ -543,22 +543,15 @@ void doAction(int area)
       }
       break;
 
-    case areaValueChroma:  // Select the color at the value-chroma spectrum
+    case areaValueChroma:  // Select color at the value-chroma spectrum
+    case areaHue:  // Select color at the hue circle.
+    case areaSelectedColor:  // Select the selected color (highlight)
       if (mouseButton == LEFT) {
+        // Synchronize the three areas with the selected color
         updateSelectedColor();
-      }
-      break;
-    case areaHue:  // Display the value-chroma spectrum for the selected hue.
-      if (mouseButton == LEFT) {
-        updateSelectedColor();
-        String hueCode = getMunsellHueCode(mouseX - hX, mouseY - hY);
-        float hueNumber = getMunsellHueNumber(mouseX - hX, mouseY - hY);
-        drawMunsellValueChroma(hueCode, hueNumber, vcX, vcY, vcWidth, vcHeight);
-      }
-      break;
-    case areaSelectedColor:  // Display the value-chroma spectrum of the selected color
-      if (mouseButton == LEFT) {
-        drawMunsellValueChroma(colorTable.rgbToMunsell(colorSelected), vcX, vcY, vcWidth, vcHeight);
+        MunsellColor mc = colorTable.rgbToMunsell(colorSelected);
+        drawMunsellValueChroma(mc, vcX, vcY, vcWidth, vcHeight);
+        drawMunsellHueCircle(hX, hY, hRadius, mc);
       }
       break;
       
@@ -610,7 +603,6 @@ void doAction(int area)
       break;
       
     case areaPaint:  // Paint collections from the current painting with current chords
-    case areaPaintForced:
       if (mouseButton == LEFT && currPaintingIdx >= 0) {
         // Current painting becomes the master for all new paintings in the collection
         Painting p = paintings.get(currPaintingIdx);
@@ -620,34 +612,25 @@ void doAction(int area)
         paintings.add(p);
         currPaintingIdx = 0;
         resetUndoPainting();
-        if (painter.initialize(area == areaPaintForced)) {
-          drawTextBox("Painting has started.", msgX, msgY, msgWidth, msgHeight);
-        }
-        else {
-          // Can't paint with the current colors and master spec - 
-          // just browse the first one, which must have failed.
-          paintings.add(painter.paintings.get(0));
-          currPaintingIdx = 1;
-          drawTextBox("Painting failed. Some patches could not be painted.", msgX, msgY, msgWidth, msgHeight);
-          painter = null;
-        }
+        painter.initialize();
+        drawTextBox("Painting has started.", msgX, msgY, msgWidth, msgHeight);
         bPause = false;
       }
       break;
     case areaPause:  // Pause the painting
-      if (mouseButton == LEFT) {
+      if (mouseButton == LEFT && painter != null && !bPause) {
         bPause = true;
         drawTextBox("Painting paused.", msgX, msgY, msgWidth, msgHeight);
       }
       break;
     case areaResume:  // Resume the painting
-      if (mouseButton == LEFT) {
+      if (mouseButton == LEFT && painter != null && bPause) {
         bPause = false;
         drawTextBox("Painting resumed.", msgX, msgY, msgWidth, msgHeight);
       }
       break;
     case areaReset:  // Reset the painting process - destroy all but master
-      if (mouseButton == LEFT && paintings.size() > 0) {
+      if (mouseButton == LEFT && paintings.size() > 1) {
         Painting p = paintings.get(0);
         paintings.clear();
         paintings.add(p);
@@ -673,6 +656,7 @@ void doAction(int area)
     case areaViewMGray:  // Draw master gray
     case areaViewMHue:  // Draw master hue
     case areaViewMTension:  // Draw master tension
+    case areaViewMTransition:  // Draw master transition
       if (mouseButton == LEFT && currPaintingIdx >= 0) {
         viewMode = area;
         drawTextBox("", msgX, msgY, msgWidth, msgHeight);
@@ -684,26 +668,50 @@ void doAction(int area)
       if (mouseButton == LEFT && imgWork != null) {
         updateSelectedColor();
         if (currPaintingIdx >= 0)
-          pi = paintings.get(currPaintingIdx).findPatch(mouseX - imgX, mouseY - imgY);
+          pi = paintings.get(currPaintingIdx).findPatchIdx(mouseX - imgX, mouseY - imgY);
       }
       if (mouseButton == RIGHT && imgWork != null && currPaintingIdx >= 0) {
         pushUndoPainting();
-        
-        // change the patch with the selected color
+
+        boolean bChanged = false;
+        // change the patch with the selected color or the last transition spec
         Painting cp = paintings.get(currPaintingIdx);
-        pi = cp.findPatch(mouseX - imgX, mouseY - imgY);
+        pi = cp.findPatchIdx(mouseX - imgX, mouseY - imgY);
         if (pi >= 0) {
           ColorPatch p = cp.patches.get(pi);
+          ColorPatch pp = (currPatchIdx >= 0) ? cp.patches.get(currPatchIdx) : null;
+          MunsellColor mc = colorTable.rgbToMunsell(colorSelected);
           switch (viewMode) {
-            case areaViewColors: p.setColor(colorSelected); break;
-            case areaViewMGray: p.setMasterGray(colorSelected); break;
-            case areaViewMHue: p.setMasterHue(colorSelected); break;
+            case areaViewColors: 
+              bChanged = p.setColor(mc);
+              break;
+            case areaViewMGray: 
+              bChanged = p.setMasterGray(mc); 
+              break;
+            case areaViewMHue: 
+              bChanged = p.setMasterHue(mc); 
+              break;
+            case areaViewMTension: 
+              if (pp != null) 
+                bChanged = p.setMasterTension(pp.masterTension); 
+              break;
+            case areaViewMTransition: 
+              if (pp != null) {
+                // no drag or shift-drag: replace it
+                // dragging: replace it only the empty ones
+                if (!bDrag || bShift || p.masterTransition.isEmpty())
+                  bChanged = p.setMasterTransition(pp.masterTransition);
+              }
+              break;
             default: break;
           }
-          cp.updateStatistics();
         }
+        if (bChanged)
+          cp.updateStatistics();
+        else
+          popUndoPainting();  // throw away the last push as nothing has changed
       }
-      if (pi >= 0)
+      if (!bDrag && pi >= 0)
         currPatchIdx = pi;
       break;
 
@@ -715,6 +723,13 @@ void doAction(int area)
 // Keyboard event handlers
 void keyPressed() 
 {
+  // No keyboard event handling when Textfield is active
+  Textfield tf = (Textfield)cp5.getController("ctrlMTransition");
+  if (tf != null && tf.isActive())
+    return;
+  
+  bShift = (key == CODED && keyCode == SHIFT);
+
   if (currPaintingIdx < 0) {  // no painting is done yet; but image src is there
     if (imgInput != null && imgWork != null) {
       // change the src input image directly
@@ -760,7 +775,7 @@ void keyPressed()
         drawTextBox("Nothing to undo.", msgX, msgY, msgWidth, msgHeight);
     }
   }
-  else if (key > 0 && key < 128) {  // pass it to updatePainting
+  else if (key > 0 && key < 128) {  // pass it to the current painting to update
     pushUndoPainting();
     
     // last two colors in the color palette are used in master edit mode
@@ -788,6 +803,7 @@ void mousePressed()
 // Mouse dragging
 void mouseDragged()
 {
+  bDrag = true;
   doAction(getMouseArea());
   prevMouseX = mouseX;
   prevMouseY = mouseY;
@@ -796,6 +812,7 @@ void mouseDragged()
 // Mouse released from dragging or click
 void mouseReleased()
 {
+  bDrag = false;
   prevMouseX = prevMouseY = -1;
 }
 
@@ -848,15 +865,16 @@ void pathNameSelected(File selection)
 void draw() 
 {
   if (painter != null && !bPause) {
-    float avgComplexity = painter.optimize();
-    assert painter.paintings.size() > 0 : "Zero paintings are generated!";
+    int pIdx = painter.paintOne();
+    String msg = "Painting No. " + (pIdx + 1) + " is done.";
+    drawTextBox(msg, msgX, msgY, msgWidth, msgHeight);
+    if (pIdx != 0)
+      return;  // let it continue to paint until it loops back to the first one
     Painting p = paintings.get(0);
     paintings.clear();
     paintings.add(p);
     paintings.addAll(painter.paintings);
     currPaintingIdx = 1;
-    String msg = "Painting in progress. Average complexity: " + String.format("%.1f", avgComplexity);
-    drawTextBox(msg, msgX, msgY, msgWidth, msgHeight);
   }
   
   if (currPaintingIdx < 0) {
@@ -925,30 +943,50 @@ void drawPatchInfo()
 {
   if (currPatchIdx < 0) {
     // erase the patch info
-    drawTextBox("", infoX, infoY, infoWidth, infoHeight + 20);
-    if (cp5.getController("ctrlMTension") != null)
+    drawTextBox("", infoX, infoY, infoWidth, infoHeight + 50);
+    if (cp5.getController("ctrlMTension") != null) {
       cp5.getController("ctrlMTension").remove();
+      cp5.getController("ctrlMTransition").remove();
+    }
+    lastPatchIdx = -1;
   }
-  else if (currPaintingIdx >= 0) {
+  else if (currPaintingIdx >= 0 && currPatchIdx != lastPatchIdx) {
     ColorPatch p = paintings.get(currPaintingIdx).patches.get(currPatchIdx);
     
     // display the current patch info
     drawTextBox(p.getString(), infoX, infoY, infoWidth, infoHeight);
     if (cp5.getController("ctrlMTension") == null) {
-      drawTextBox("M-Tension", infoX, infoY + infoHeight, 100, 20);
+      int x = infoX;
+      int y = infoY + infoHeight;
+      drawTextBox("M-Tension:", x, y, 100, 20);
       cp5.addSlider("ctrlMTension").setValue(p.masterTension).setRange(0,40)
-                .setLabel("").setPosition(infoX + 100, infoY + infoHeight)
-                .setSize(infoWidth - 100, 20);
+        .setLabel("").setPosition(x + 100, y).setSize(infoWidth - 100, 20);
+      y += 25;
+      drawTextBox("M-Transit:", x, y, 100, 20);
+      cp5.addTextfield("ctrlMTransition").setPosition(x + 100, y)
+        .setSize(infoWidth - 100, 20).setFont(fontText).setAutoClear(false)
+        .setLabel("").setValue(p.masterTransition);
     }
     else {
       cp5.getController("ctrlMTension").setValue(p.masterTension);
+      ((Textfield)cp5.getController("ctrlMTransition")).setValue(p.masterTransition);
     }
+    
+    lastPatchIdx = currPatchIdx;
   }
 }
-// Callback for tension slider
+// Callback for tension and transition controls
 void ctrlMTension(float v) {
-  if (currPaintingIdx >= 0 && currPatchIdx >= 0)
-    paintings.get(currPaintingIdx).patches.get(currPatchIdx).masterTension = v; 
+  if (currPaintingIdx >= 0 && currPatchIdx >= 0) {
+    pushUndoPainting();
+    paintings.get(currPaintingIdx).patches.get(currPatchIdx).setMasterTension(v); 
+  }
+}
+public void ctrlMTransition(String str) {
+  if (currPaintingIdx >= 0 && currPatchIdx >= 0) {
+    pushUndoPainting();
+    paintings.get(currPaintingIdx).patches.get(currPatchIdx).setMasterTransition(str);
+  }
 }
 
 // Draw all buttons
@@ -983,18 +1021,16 @@ void drawButtons()
   // Buttons for painting operations
   cp5.addButton("btnPaint").setLabel("PAINT").setValue(areaPaint)
      .setPosition(btnMasterX + (btnWidth + 10) * 0, ctrlY + 160).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnPaintForced").setLabel("PAINT-F").setValue(areaPaintForced)
-     .setPosition(btnMasterX + (btnWidth + 10) * 1, ctrlY + 160).setSize(btnWidth, btnHeight);
   cp5.addButton("btnPause").setLabel("PAUSE").setValue(areaPause)
-     .setPosition(btnMasterX + (btnWidth + 10) * 2, ctrlY + 160).setSize(btnWidth, btnHeight);
+     .setPosition(btnMasterX + (btnWidth + 10) * 1, ctrlY + 160).setSize(btnWidth, btnHeight);
   cp5.addButton("btnResume").setLabel("RESUME").setValue(areaResume)
-     .setPosition(btnMasterX + (btnWidth + 10) * 3, ctrlY + 160).setSize(btnWidth, btnHeight);
+     .setPosition(btnMasterX + (btnWidth + 10) * 2, ctrlY + 160).setSize(btnWidth, btnHeight);
   cp5.addButton("btnReset").setLabel("RESET").setValue(areaReset)
-     .setPosition(btnMasterX + (btnWidth + 10) * 4, ctrlY + 160).setSize(btnWidth, btnHeight);
+     .setPosition(btnMasterX + (btnWidth + 10) * 3, ctrlY + 160).setSize(btnWidth, btnHeight);
   cp5.addButton("btnPrev").setLabel("PREV").setValue(areaPrev)
-     .setPosition(btnMasterX + (btnWidth + 10) * 5, ctrlY + 160).setSize(btnWidth, btnHeight);
+     .setPosition(btnMasterX + (btnWidth + 10) * 4, ctrlY + 160).setSize(btnWidth, btnHeight);
   cp5.addButton("btnNext").setLabel("NEXT").setValue(areaNext)
-     .setPosition(btnMasterX + (btnWidth + 10) * 6, ctrlY + 160).setSize(btnWidth, btnHeight);
+     .setPosition(btnMasterX + (btnWidth + 10) * 5, ctrlY + 160).setSize(btnWidth, btnHeight);
 
   // Buttons for View patches
   cp5.addButton("btnViewColors").setLabel("COLORS").setValue(areaViewColors)
@@ -1007,6 +1043,8 @@ void drawButtons()
      .setPosition(btnViewX + (btnWidth + 20) * 3, btnViewY).setSize(btnWidth, btnHeight);
   cp5.addButton("btnViewMTension").setLabel("M-TENSION").setValue(areaViewMTension)
      .setPosition(btnViewX + (btnWidth + 20) * 4, btnViewY).setSize(btnWidth, btnHeight);
+  cp5.addButton("btnViewMTransition").setLabel("M-TRANSIT").setValue(areaViewMTransition)
+     .setPosition(btnViewX + (btnWidth + 20) * 5, btnViewY).setSize(btnWidth, btnHeight);
 }
 
 // Process button events
@@ -1022,7 +1060,6 @@ void btnStore(int area) { doAction(area); }
 void btnRestore(int area) { doAction(area); }
 void btnTheme(int area) { doAction(area); }
 void btnPaint(int area) { doAction(area); }
-void btnPaintForced(int area) { doAction(area); }
 void btnPause(int area) { doAction(area); }
 void btnResume(int area) { doAction(area); }
 void btnReset(int area) { doAction(area); }
@@ -1033,6 +1070,7 @@ void btnViewTension(int area) { doAction(area); }
 void btnViewMGray(int area) { doAction(area); }
 void btnViewMHue(int area) { doAction(area); }
 void btnViewMTension(int area) { doAction(area); }
+void btnViewMTransition(int area) { doAction(area); }
 
 // Replace the color palette at x location with the colorSelected
 void updateColorPalette(int x) 
@@ -1234,7 +1272,7 @@ void ctrlCentroid() {
   }
   if (mouseButton == RIGHT) {
     color c = colorSelected;
-    colorTable.rgbToMunsell(c).copyTo(ctrlCentroid);
+    ctrlCentroid = new MunsellColor(colorTable.rgbToMunsell(c));
     CColor cc = new CColor(c, c, c, c, c);
     cp5.getController("ctrlCentroid").setColor(cc);
   }

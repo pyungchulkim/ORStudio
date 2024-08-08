@@ -5,11 +5,18 @@
 // Note that I use Munsell Color system as a contiguous space rather than quantized
 // as published in the paper. However, I rely on the mapping table (mToRGB)
 // whenever I need to display a Munsell color and the mapping entry is quantized.
-// Also, I double the Value (lightness) scale because I think Value is
-// more discriminative than the original Munsell value scale.
-//
-// Also, I limit the range of chroma for each hue/value combination to
-// the colors that I could generate from affordable oil colors.
+// 
+// There are several modifications that I made either directly 
+// to the original mapping table, or at loading time as conversion.
+//   (1) I doubled the Value (lightness) scale at loading time
+//       because I think Value is more discriminative than the original 
+//       Munsell value scale.
+//   (2) I modified the original table so that it uses hue number within
+//       [0, 10) rather than (0, 10]. This was done by replacing 10.0-<hueCode>
+//       as 0.0-<the next hueCode>.
+//   (3) I also added 0.0R-value-0 for neutral values (N-value).
+//   (4) At loading time, I limit the range of chroma for each hue/value 
+//       combination to the colors that I could generate from affordable oil colors.
 //
 public class ColorTable 
 {
@@ -20,75 +27,75 @@ public class ColorTable
   // The limitation table started from Paul Centore's book,
   // Controlling Colour with the Munsell System, where its limitation is
   // based upon his gamut (i.e., printer inks).
-  public int getMaxChroma(float hn, String hc, float v)
+  public int getMaxChroma(String hc, float hn, float v)
+  {
+    MunsellColor mc = new MunsellColor(hc, hn, 10, 2);
+    return getMaxChroma(mc.hueDegree, v);
+  }
+  public int getMaxChroma(float hd, float v)
   {
     final int maxChromaTable[][] = {
-                  /*0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 <-- Munsell values: 0-10
+                 /* 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 <-- Munsell values: 0-10 */
+      /* 0.0R  */ { 0, 4, 8,10,16,18,14, 8, 4, 0, 0},
       /* 2.5R  */ { 0, 4, 8,10,16,16,12,10, 4, 0, 0},
       /* 5.0R  */ { 0, 2, 8,10,14,14,12, 8, 4, 0, 0},
       /* 7.5R  */ { 0, 2, 6,12,16,12,12, 8, 4, 0, 0},
-      /* 10.0R */ { 0, 2, 6,10,12,14,12, 8, 4, 0, 0},
-    
+      
+      /* 0.0YR */ { 0, 2, 6,10,12,14,12, 8, 4, 0, 0},
       /* 2.5YR */ { 0, 2, 4, 8,10,12,16, 8, 4, 0, 0},
       /* 5.0YR */ { 0, 2, 4, 6, 8,12,14,10, 6, 0, 0},
       /* 7.5YR */ { 0, 0, 2, 6, 8,10,12,16, 4, 0, 0},
-      /* 10.0YR*/ { 0, 0, 2, 6, 8,10,12,14, 6, 0, 0},
-    
+
+      /* 0.0Y  */ { 0, 0, 2, 6, 8,10,12,14, 6, 0, 0},
       /* 2.5Y  */ { 0, 0, 2, 4, 6,10,10,14,10, 2, 0},
       /* 5.0Y  */ { 0, 0, 2, 4, 6, 8,10,14,16, 2, 0},
       /* 7.5Y  */ { 0, 0, 2, 4, 6, 8,10,12,14, 6, 0},
-      /* 10.0Y */ { 0, 2, 2, 4, 6, 8,10,12,14,14, 0},
-    
+
+      /* 0.0GY */ { 0, 2, 2, 4, 6, 8,10,12,14,14, 0},
       /* 2.5GY */ { 0, 2, 4, 4, 6, 8,10,12,12, 4, 0},
       /* 5.0GY */ { 0, 2, 4, 6, 8, 8,12,12,12, 4, 0},
       /* 7.5GY */ { 0, 2, 4, 6, 8,10,14,12, 8, 2, 0},
-      /* 10.0GY*/ { 0, 2, 6, 8,10,14,14,12, 6, 0, 0},
-    
+
+      /* 0.0G  */ { 0, 2, 6, 8,10,14,14,12, 6, 0, 0},
       /* 2.5G  */ { 0, 4, 8,12,16,16,14,10, 4, 0, 0},
       /* 5.0G  */ { 0, 4,10,14,16,14,14,10, 4, 0, 0},
       /* 7.5G  */ { 0, 4, 8,14,14,14,12,10, 4, 0, 0},
-      /* 10.0G */ { 0, 2,10,12,16,14,14,10, 4, 0, 0},
-    
+
+      /* 0.0BG */ { 0, 2,10,12,16,14,14,10, 4, 0, 0},
       /* 2.5BG */ { 0, 4, 8,14,14,14,12, 8, 4, 0, 0},
       /* 5.0BG */ { 0, 2, 8,10,14,12,12, 8, 4, 0, 0},
       /* 7.5BG */ { 0, 2, 8,12,12,14,12, 8, 4, 0, 0},
-      /* 10.0BG*/ { 0, 4, 8,10,10,14,10,10, 4, 0, 0},
-    
+
+      /* 0.0B  */ { 0, 4, 8,10,10,14,10,10, 4, 0, 0},
       /* 2.5B  */ { 0, 4, 6, 8,10,14,12,10, 4, 2, 0},
       /* 5.0B  */ { 0, 4, 8, 8,12,12,14,10, 4, 2, 0},
       /* 7.5B  */ { 0, 4, 6,10,12,16,14,10, 6, 2, 0},
-      /* 10.0B */ { 0, 4, 8,12,14,16,12, 8, 4, 0, 0},
-    
+
+      /* 0.0PB */ { 0, 4, 8,12,14,16,12, 8, 4, 0, 0},
       /* 2.5PB */ { 0, 6,10,14,18,16,12, 8, 4, 0, 0},
       /* 5.0PB */ { 0, 8,12,16,16,14,12, 8, 4, 0, 0},
       /* 7.5PB */ { 0,14,18,18,14,12,10, 6, 4, 0, 0},
-      /* 10.0PB*/ { 0,12,18,18,14,12,10, 6, 4, 0, 0},
-    
+
+      /* 0.0PB */ { 0,12,18,18,14,12,10, 6, 4, 0, 0},
       /* 2.5P  */ { 0,12,18,18,14,14,10, 8, 4, 0, 0},
       /* 5.0P  */ { 0,10,16,18,16,16,10, 8, 4, 0, 0},
       /* 7.5P  */ { 0, 6,14,16,18,16,12, 8, 4, 2, 0},
-      /* 10.0P */ { 0, 6,14,16,18,18,14,12, 6, 2, 0},
-    
+
+      /* 0.0RP */ { 0, 6,14,16,18,18,14,12, 6, 2, 0},
       /* 2.5RP */ { 0, 6,12,16,18,18,18,10, 4, 2, 0},
       /* 5.0RP */ { 0, 4,10,14,18,20,16,10, 6, 2, 0},
       /* 7.5RP */ { 0, 4,10,12,18,18,14, 8, 4, 0, 0},
-      /* 10.0RP*/ { 0, 4, 8,10,16,18,14, 8, 4, 0, 0}
     };
     
-    int hci;
-    for (hci = 0; hci < hueCodes.length; hci++) {
-      if (hc.equals(hueCodes[hci]))
-        break;
-    }
-    int hni = int(hn / 2.5) - 1;
+    assert hd >= 0 && hd < 360 : "Invalid hueDegree";
+    int hi = int(hd / hueDegreePerSector);
     int vi = int(v / 2);
     
     int maxChroma = 0;
-    if (hci < hueCodesMax && hni >= 0 && hni < hueNumberMax && vi < 11)
-      maxChroma = maxChromaTable[hci *  hueSectorsPerCode + hni][vi];
+    if (hi >= 0 && hi < 40 && vi < 11)
+      maxChroma = maxChromaTable[hi][vi];
     return maxChroma;
   }
-
 
   // Load the conversion tables from CSV files to hash maps
   @SuppressWarnings("resource")
@@ -112,7 +119,7 @@ public class ColorTable
         String hueCode = rs.group(2);
         float value = Integer.parseInt(rs.group(3)) * 2;
         float chroma = Integer.parseInt(rs.group(4));
-        if (chroma > getMaxChroma(hueNumber, hueCode, value)) 
+        if (chroma > getMaxChroma(hueCode, hueNumber, value)) 
           continue;
         String hueKey = String.format("%.1f", hueNumber) + hueCode + 
                         "-" + (int)value + "-" + (int)chroma;
@@ -124,7 +131,7 @@ public class ColorTable
         // RGB need to be directly mapped to the original Munsell color whenever needed.
         // This reverse lookup makes it possible.
         MunsellColor mc = new MunsellColor(hueCode, hueNumber, value, chroma);
-        rgbToM.put(c, mc);  		
+        rgbToM.put(c, mc);
       }
   
       // Parse RGBToMunsell table
@@ -167,7 +174,6 @@ public class ColorTable
     // Not all combinations of H/V/C exist in the table.
     // We try to find the nearest one in the quantized Munsell sphere
     // within sqrt(15) distance from the original color.
-    
     Color rgb = mToRGB.get(quantizeMunsellKey(mc));
     if (rgb != null)
       return rgb;
@@ -264,32 +270,28 @@ public class ColorTable
 // fractional part, while value and chroma are a whole integer.
 String quantizeMunsellKey(MunsellColor mc) 
 {
-  int v = round(mc.value);
+  int v = round(mc.value / 2) * 2;
   int c = 2 * round(mc.chroma / 2);  // nearest even number
-  
+
   // I use 0.0R-V-C format for pure grey, rather than Nv in the mapping table.
   if (c == 0)
     return "0.0R-" + v + "-0";
 
-  // hueNumber as key needs to be represented as the nearest multiple
-  // of 2.5 from 2.5 to 10.0. As such, a hueNumber less than 1.25 
-  // better be represented as 10.0 of prior hue rather than 2.5 of this hue.
-  float hn = mc.hueNumber - 1.25;
-  String hc = null;
-  if (hn < 0) {
-    // use prior hue code with 10.0 as hue number
-    hc = hueCodes[hueCodes.length - 1];
-    for (String s : hueCodes) {
-      if (s.equals(mc.hueCode))
+  String hc = mc.hueCode;
+  float hn = 2.5 * round(mc.hueNumber / 2.5);
+  if (hn > 7.5) {
+    // hueNumber as key needs to be represented as the nearest multiple
+    // of 2.5 from 0 to 7.5. A hueNumber quantized to greater than 7.5 
+    // better be represented as 0.0 of next hue.
+    int hi;
+    for (hi = 0; hi < hueCodes.length; hi++) {
+      if (mc.hueCode.equals(hueCodes[hi]))
         break;
-      hc = s;
     }
-    hn = 10.0;
-  }
-  else {
-    hc = mc.hueCode;
-    // get the nearest multiple of 2.5
-    hn = 2.5 * (floor(hn / 2.5) + 1);
+    assert hi < hueCodes.length : "Invalid hueCode";
+    hi = (hi == hueCodes.length - 1) ? 0 : hi + 1;
+    hc = hueCodes[hi];
+    hn = 0.0;
   }
 
   return String.format("%.1f", hn) + hc + "-" + v + "-" + c;
