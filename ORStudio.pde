@@ -764,7 +764,11 @@ void keyPressed()
     return;
   }
 
-  if (key == 26) {  // ctrl-Z: undo the last edit of the painting if still at the same painting
+  if (key == 'o' || key == 'O')
+    bShowContour = !bShowContour;
+  else if (key == 'l' || key == 'L')
+    bShowReferenceLine = !bShowReferenceLine;
+  else if (key == 26) {  // ctrl-Z: undo the last edit of the painting if still at the same painting
     if (undoPaintingIdx == currPaintingIdx) {
       Painting up = popUndoPainting();
       if (up != null) {

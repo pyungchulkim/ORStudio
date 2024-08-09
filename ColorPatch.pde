@@ -1,5 +1,5 @@
 // Constants - some are fuzzy, picked based upon by my experimentation
-final int minPatchSize = 30;  // min # of pixels to form a patch
+final int minPatchSize = 10;  // min # of pixels excluding contour to form a patch
 final int contourColorThreshold = 60;  // RGB diff to identify contour line
 
 // Constants for color transition types
@@ -11,11 +11,15 @@ final int transChromaVariant = 4;
 final int transValueVariant = 5;
 final int transAnalogous = 6;
 
+// flag to show contour lines
+boolean bShowContour = false;
+
 // Class for an individual Color Patch
 class ColorPatch
 {
   public int id;  // ID of the patch: serial number starting from 0
   public ArrayList<PVector> points; // coordinates of all the points
+  public ArrayList<PVector> contourPoints;  // coordinates of contour
   public float xMin, xMax, yMin, yMax;  // dimension of the contour in rectangle
   public float masterGray;  // master gray level. 0 if not specified
   public float masterHue;  // master hue degree. negative if not specified
@@ -37,18 +41,18 @@ class ColorPatch
   public ColorPatch() {}
   
   // Constructor to build a patch from pixels
-  public ColorPatch(int id, PImage img, ArrayList<PVector> pts)
+  public ColorPatch(int id, PImage img, ArrayList<PVector> pts, ArrayList<PVector> cpts)
   {
     this.id = id;
     points = pts;
-    assert points.size() > 0 : "Empty color patch: <" + points.size() + ">";
+    contourPoints = cpts;
 
     // Set the dimension
     xMin = Integer.MAX_VALUE;
     xMax = Integer.MIN_VALUE;
     yMin = Integer.MAX_VALUE;
     yMax = Integer.MIN_VALUE;
-    for (PVector p : pts) {
+    for (PVector p : cpts) {
       xMin = min(xMin, p.x);
       xMax = max(xMax, p.x);
       yMin = min(yMin, p.y);
@@ -94,6 +98,7 @@ class ColorPatch
   {
     id = p.id;
     points = p.points;  // shallow copy
+    contourPoints = p.contourPoints;
     xMin = p.xMin; xMax = p.xMax; yMin = p.yMin; yMax = p.yMax;
     masterGray = p.masterGray;
     masterHue = p.masterHue;
@@ -111,6 +116,7 @@ class ColorPatch
   {
     oos.writeInt(id);
     oos.writeObject(points);
+    oos.writeObject(contourPoints);
     oos.writeFloat(xMin); oos.writeFloat(xMax); oos.writeFloat(yMin); oos.writeFloat(yMax);
     oos.writeFloat(masterGray);
     oos.writeFloat(masterHue);
@@ -127,6 +133,7 @@ class ColorPatch
   {
     id = ois.readInt();
     points = (ArrayList<PVector>)ois.readObject();
+    contourPoints = (ArrayList<PVector>)ois.readObject();
     xMin = ois.readFloat(); xMax = ois.readFloat(); yMin = ois.readFloat(); yMax = ois.readFloat();
     masterGray = ois.readFloat();
     masterHue = ois.readFloat();
@@ -249,16 +256,25 @@ class ColorPatch
     transParsed = true;
   }
   
-  // Get patch area
-  public float getArea()
+  // Get the size of patch area
+  public float getSize()
   {
     return points.size();
+  }
+  // Get the length of patch contour
+  public float getLength()
+  {
+    return contourPoints.size();
   }
   
   // Scale all the pixel locations within the patch
   public void scale(float xScale, float yScale)
   {
     for (PVector p : points) {
+      p.x *= xScale;
+      p.y *= yScale;
+    }
+    for (PVector p : contourPoints) {
       p.x *= xScale;
       p.y *= yScale;
     }
@@ -272,7 +288,8 @@ class ColorPatch
   public String getString()
   {
     return  "Patch ID: " + id +
-            "\nArea: " + String.format("%,d", (int)getArea()) +
+            "\nArea: " + String.format("%,d", (int)getSize()) +
+                         String.format(" (%,d)", (int)getLength()) +
             "\nGray Gap: " + String.format("%.1f", gGap) +
             "\nColor Gap: " + String.format("%.1f", cGap);
   }
@@ -320,7 +337,7 @@ class ColorPatch
         float b = (t >= 90) ? 255 * -cos(radians(t)) : 0;
         drawPoints(img, color(r, g, b));
         break;
-      case areaViewMTransition: // Draw master transition - handled in painting level
+      case areaViewMTransition: // Draw master transition - handled at painting level
       default:
         break;
     }
@@ -332,6 +349,12 @@ class ColorPatch
     // Draw area inside
     for (PVector p : points) {
           img.set((int)p.x, (int)p.y, c);
+    }
+    // Draw contour
+    if (bShowContour) {
+      for (PVector p : contourPoints) {
+            img.set((int)p.x, (int)p.y, colorEdge);
+      }
     }
   }
 }

@@ -215,11 +215,11 @@ class Painting
     float ssumG = 0, ssumC = 0;
     float area = 0;
     for (ColorPatch p : patches) {
-      sumG += p.gGap * p.getArea();
-      sumC += p.cGap * p.getArea();
-      ssumG += p.gGap * p.gGap * p.getArea();
-      ssumC += p.cGap * p.cGap * p.getArea();
-      area += p.getArea();
+      sumG += p.gGap * p.getSize();
+      sumC += p.cGap * p.getSize();
+      ssumG += p.gGap * p.gGap * p.getSize();
+      ssumC += p.cGap * p.cGap * p.getSize();
+      area += p.getSize();
     }
     float msdG = ssumG / area;
     float msdC = ssumC / area;
@@ -241,7 +241,7 @@ class Painting
     float ssumErr = 0;
     for (ColorPatch p : patches) {
       float td = p.cGap - p.masterTension;
-      ssumErr += td * td * p.getArea();
+      ssumErr += td * td * p.getSize();
     }
     tensionGap = ssumErr / area;
   }
@@ -295,10 +295,10 @@ class Painting
         }
       }
       if (mc != null && cnt != null) {  // Similar one is found; add the count.
-        histogram.put(mc, cnt + p.getArea());
+        histogram.put(mc, cnt + p.getSize());
       }
       else {  // No similar color is found; create a new entry
-        histogram.put(p.mColor, p.getArea());
+        histogram.put(p.mColor, p.getSize());
       }
     }
     
@@ -441,11 +441,6 @@ class Painting
               p.masterGray = mc2.value;
           }
         }
-        break;
-      case 'l':  // Toggle reference lines in transition view
-      case 'L':
-        if (what == areaViewMTransition)
-          bShowReferenceLine = !bShowReferenceLine;
         break;
         
       default:
@@ -723,21 +718,6 @@ class Painting
         mc.value = max(2, min(18, mc.value));
         mc.chroma = max(2, min(colorTable.getMaxChroma(mc.hueDegree, mc.value), mc.chroma));
         
-        /*
-        // locate the nearest chroma match at the value level.
-        float org = mc.chroma;
-        int vd = mc.value < 10 ? 2 : -2;
-        while (mc.value > 0 && mc.value <= 20) {
-          while (!colorTable.isMunsellKeyInMap(mc) && mc.chroma > 0) {
-            mc.chroma -= 2;
-          }
-          if (mc.chroma > 0)
-            break;  // found           
-          mc.value += vd; // adjust value level in case it is too high or low for the hue
-          mc.chroma = org;
-        }
-        */
-
         p.setColor(mc);
         bDone = false;  // a new illustrated patch triggers another loop
       }
@@ -979,34 +959,35 @@ Painting buildPatchesFromContour(PImage imgSrc, color cBase, color cContour, PIm
         if (m == cVisited)
           continue;  // Already visited this pixel.
           
-        s = imgSrc.get(px, py);
-        if (cBase != 0 && rgbDistance(s, cBase) >= contourColorThreshold ||
-            cBase == 0 && rgbDistance(s, cContour) < contourColorThreshold ||
-            px == 0 || px == imgSrc.width - 1 || py == 0 || py == imgSrc.height - 1) 
-        {
-          // Has reached the contour or the image boundary
-          contourPoints.add(pv);
-        }
-        else {
-          // Has reached a new pixel; store and mark it visited
-          points.add(pv);
-          imgMark.set(px, py, cVisited);
-
-          // Visit pixels that are adjacent either vertically or horizontally.
-          if (px + 1 < imgSrc.width)
-            ps.push(new PVector(px + 1, py));
-          if (px - 1 >= 0)
-            ps.push(new PVector(px - 1, py));
-          if (py + 1 < imgSrc.height)
-            ps.push(new PVector(px, py + 1));
-          if (py - 1 >= 0)
-            ps.push(new PVector(px, py - 1));
+        // Has reached a new pixel; store and mark it visited
+        points.add(pv);
+        imgMark.set(px, py, cVisited);
+        
+        // Try neighbors. Also add it to contour if a neighbor is boundary
+        PVector[] arrNPV = new PVector[4];
+        arrNPV[0] = new PVector(px + 1, py);
+        arrNPV[1] = new PVector(px - 1, py);
+        arrNPV[2] = new PVector(px, py + 1);
+        arrNPV[3] = new PVector(px, py - 1);
+        for (PVector npv : arrNPV) {
+          s = imgSrc.get((int)npv.x, (int)npv.y);
+          if (npv.x < 0 || npv.x >= imgSrc.width || 
+              npv.y < 0 || npv.y >= imgSrc.height ||
+              cBase != 0 && rgbDistance(s, cBase) >= contourColorThreshold ||
+              cBase == 0 && rgbDistance(s, cContour) < contourColorThreshold)
+          {  // this neighbor is the boundary
+            contourPoints.add(pv);
+          }
+          else {  // continue to explore this
+            ps.push(npv);
+          }
         }
       }
-      if (points.size() > minPatchSize) {
-        ColorPatch p = new ColorPatch(patches.size(), imgSrc, points);
+      
+      if ((points.size() - contourPoints.size()) > minPatchSize) {
+        ColorPatch p = new ColorPatch(patches.size(), imgSrc, points, contourPoints);
         patches.add(p);
-        p.drawPoints(imgMark, cDone); // mark its area and contour as done
+        p.drawPoints(imgMark, cDone); // mark its area as done
       }
     }
   }
@@ -1026,8 +1007,8 @@ Painting buildPatchesFromContour(PImage imgSrc, color cBase, color cContour, PIm
   float areaSum = 0;
   MunsellColor centroid = null;
   for (ColorPatch p : patches) {
-    centroid = (centroid == null) ? p.mColor : centroid.getMixture(p.mColor, p.getArea() / areaSum);
-    areaSum += p.getArea();
+    centroid = (centroid == null) ? p.mColor : centroid.getMixture(p.mColor, p.getSize() / areaSum);
+    areaSum += p.getSize();
   }
   
   return new Painting(imgScaleTo.width, imgScaleTo.height, patches, centroid);
@@ -1040,7 +1021,8 @@ Painting buildPatchesFromContour(PImage imgSrc, color cBase, color cContour, PIm
 Painting buildPatchesFromSolid(PImage imgSrc, color cSkip, PImage imgScaleTo) 
 {
   ArrayList<ColorPatch> patches = new ArrayList<ColorPatch>();
-  HashMap<Integer, ArrayList<PVector> > map = new HashMap<Integer, ArrayList<PVector> >();
+  HashMap<Integer, ArrayList<PVector> > mapPoints = new HashMap<Integer, ArrayList<PVector> >();
+  HashMap<Integer, ArrayList<PVector> > mapContourPoints = new HashMap<Integer, ArrayList<PVector> >();
 
   for (int i = 0; i < imgSrc.width; i++) {
     for (int j = 0; j < imgSrc.height; j++) {
@@ -1048,32 +1030,35 @@ Painting buildPatchesFromSolid(PImage imgSrc, color cSkip, PImage imgScaleTo)
       if (cSkip != 0 && rgbDistance(c, cSkip) < contourColorThreshold)
         continue;  // skip this color
         
-      // Skip an island pixel - this will reduce # of patches to cover trivial
-      // pixels that might have been created by gradation of paint brush tools.
-      if (c != imgSrc.get(i - 1, j - 1) && c != imgSrc.get(i, j - 1) && c != imgSrc.get(i + 1, j - 1) &&
-          c != imgSrc.get(i - 1, j) && c != imgSrc.get(i + 1, j) &&
-          c != imgSrc.get(i - 1, j + 1) && c != imgSrc.get(i, j + 1) && c != imgSrc.get(i + 1, j + 1))
-        continue;
-
       // See if the color is already in the map
-      ArrayList<PVector> pts = map.get(c);
-      if (pts == null) {
+      ArrayList<PVector> points = mapPoints.get(c);
+      ArrayList<PVector> contourPoints = mapContourPoints.get(c);
+      if (points == null) {
         // a new color: create a new points vector and put it to the map
-        pts = new ArrayList<PVector>();
-        pts.add(new PVector(i, j));
-        map.put(c, pts);
+        points = new ArrayList<PVector>();
+        mapPoints.put(c, points);
+        contourPoints = new ArrayList<PVector>();
+        mapContourPoints.put(c, contourPoints);
       }
-      else {
-        pts.add(new PVector(i, j));
-      }
+      assert contourPoints != null : "points and contourPoints are not in sync";
+
+      points.add(new PVector(i, j));
+      // Add it to contour if its neighbor is a boundary
+      if (i <= 0 || i >= imgSrc.width - 1 || j <= 0 || j >= imgSrc.height - 1 ||
+          c != imgSrc.get(i - 1, j) || c != imgSrc.get(i + 1, j) &&
+          c != imgSrc.get(i, j - 1) || c != imgSrc.get(i, j + 1))
+      {
+        contourPoints.add(new PVector(i, j));
+      }      
     }
   }
     
   // Create all patches from the map
-  for (Map.Entry<Integer, ArrayList<PVector> > m : map.entrySet()) {
-    ArrayList<PVector> pts = m.getValue();
-    if (pts.size() > minPatchSize) {
-      ColorPatch p = new ColorPatch(patches.size(), imgSrc, pts);
+  for (Map.Entry<Integer, ArrayList<PVector> > m : mapPoints.entrySet()) {
+    ArrayList<PVector> points = m.getValue();
+    ArrayList<PVector> contourPoints = mapContourPoints.get(m.getKey());
+    if ((points.size() - contourPoints.size()) > minPatchSize) {
+      ColorPatch p = new ColorPatch(patches.size(), imgSrc, points, contourPoints);
       patches.add(p);
     }
   }
@@ -1093,8 +1078,8 @@ Painting buildPatchesFromSolid(PImage imgSrc, color cSkip, PImage imgScaleTo)
   float areaSum = 0;
   MunsellColor centroid = null;
   for (ColorPatch p : patches) {
-    centroid = (centroid == null) ? p.mColor : centroid.getMixture(p.mColor, p.getArea() / areaSum);
-    areaSum += p.getArea();
+    centroid = (centroid == null) ? p.mColor : centroid.getMixture(p.mColor, p.getSize() / areaSum);
+    areaSum += p.getSize();
   }
   
   return new Painting(imgScaleTo.width, imgScaleTo.height, patches, centroid);
@@ -1121,8 +1106,8 @@ Painting buildPatchesFromSolidContour(PImage imgSrc, color cBase, PImage imgScal
   float areaSum = 0;
   MunsellColor centroid = null;
   for (ColorPatch p : pSolid.patches) {
-    centroid = (centroid == null) ? p.mColor : centroid.getMixture(p.mColor, p.getArea() / areaSum);
-    areaSum += p.getArea();
+    centroid = (centroid == null) ? p.mColor : centroid.getMixture(p.mColor, p.getSize() / areaSum);
+    areaSum += p.getSize();
   }
   
   return new Painting(pSolid.imgWidth, pSolid.imgHeight, pSolid.patches, centroid);
