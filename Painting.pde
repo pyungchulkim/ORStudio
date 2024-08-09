@@ -1,6 +1,7 @@
 final float similarColorGap = 2;  // color gap that is considered similar
 final float similarTensionGap = 4;  // tension gap that is considered similar
-final float similarHueGap = 9;  // hue degree that is considered similar
+final float similarHueGap = 9;  // hue degree gap that is considered similar
+final float similarChromaGap = 2;  // chroma gap that is considered similar
 final float similarValueGap = 2;  // value gap that is considered similar
 
 // flag to show reference lines in transition view
@@ -328,8 +329,10 @@ class Painting
         if (what == areaViewMGray)
           for (ColorPatch p : patches) p.masterGray = p.mColor.value;
         if (what == areaViewMHue)
-          for (ColorPatch p : patches) 
+          for (ColorPatch p : patches) {
             p.masterHue = p.mColor.isGray() ? -1 : p.mColor.hueDegree;
+            p.masterChroma = p.mColor.isGray() ? -1 : p.mColor.chroma;
+          }
         if (what == areaViewMTension)
           for (ColorPatch p : patches) p.masterTension = p.cGap;
         break;
@@ -403,7 +406,7 @@ class Painting
         if (what == areaViewMGray)
           for (ColorPatch p : patches) p.masterGray = 0;
         if (what == areaViewMHue)
-          for (ColorPatch p : patches) p.masterHue = -1;
+          for (ColorPatch p : patches) p.masterHue = p.masterChroma = -1;
         if (what == areaViewMTension)
           for (ColorPatch p : patches) p.masterTension = 0;
         if (what == areaViewMTransition)
@@ -428,9 +431,11 @@ class Painting
           for (ColorPatch p : patches) {
             if (mc1.isGray() && p.masterHue < 0 ||
                 !mc1.isGray() && p.masterHue >= 0 &&
-                degreeDistance(mc1.hueDegree, p.masterHue) < similarHueGap)
+                degreeDistance(mc1.hueDegree, p.masterHue) < similarHueGap &&
+                abs(mc1.chroma - p.masterChroma) < similarChromaGap)
             {
               p.masterHue = mc2.isGray() ? -1 : mc2.hueDegree;
+              p.masterChroma = mc2.isGray() ? -1 : mc2.chroma;
             }
           }
         }
@@ -595,9 +600,10 @@ class Painting
         continue;
       }
       if (mp.masterHue >= 0) {  
-        // master hue is specified; match if it is within the hue range
-        if (degreeDistance(mp.masterHue, c.hueDegree) > hueVariance)
-          continue;  // too far from the master hue
+        // master hue/chroma is specified; match if it is within the hue range
+        if (degreeDistance(c.hueDegree, mp.masterHue) > hueVariance ||
+            abs(c.chroma - mp.masterChroma) > similarChromaGap)
+          continue;  // too far from the master hue/chroma
       }
       if (mp.masterTension > 0) {
         // master tension is specified; match if it is within the gap

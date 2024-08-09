@@ -1043,7 +1043,7 @@ void drawButtons()
      .setPosition(btnViewX + (btnWidth + 20) * 1, btnViewY).setSize(btnWidth, btnHeight);
   cp5.addButton("btnViewMGray").setLabel("M-GRAY").setValue(areaViewMGray)
      .setPosition(btnViewX + (btnWidth + 20) * 2, btnViewY).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnViewMHue").setLabel("M-HUE").setValue(areaViewMHue)
+  cp5.addButton("btnViewMHue").setLabel("M-HUE-C").setValue(areaViewMHue)
      .setPosition(btnViewX + (btnWidth + 20) * 3, btnViewY).setSize(btnWidth, btnHeight);
   cp5.addButton("btnViewMTension").setLabel("M-TENSION").setValue(areaViewMTension)
      .setPosition(btnViewX + (btnWidth + 20) * 4, btnViewY).setSize(btnWidth, btnHeight);

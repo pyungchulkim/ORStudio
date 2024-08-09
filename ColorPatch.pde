@@ -23,6 +23,7 @@ class ColorPatch
   public float xMin, xMax, yMin, yMax;  // dimension of the contour in rectangle
   public float masterGray;  // master gray level. 0 if not specified
   public float masterHue;  // master hue degree. negative if not specified
+  public float masterChroma;  // master chroma - always used together with masterHue
   public float masterTension;  // master tension. 0 if not specified
   public String masterTransition;  // master transition spec
   public MunsellColor mColor; // painted Munsell color of the patch - always one from the quantized map (mToRGB)
@@ -62,6 +63,7 @@ class ColorPatch
     // Initialize master color/tension
     masterGray = 0;
     masterHue = -1;
+    masterChroma = -1;
     masterTension = 0;
     masterTransition = "";
 
@@ -102,6 +104,7 @@ class ColorPatch
     xMin = p.xMin; xMax = p.xMax; yMin = p.yMin; yMax = p.yMax;
     masterGray = p.masterGray;
     masterHue = p.masterHue;
+    masterChroma = p.masterChroma;
     masterTension = p.masterTension;
     masterTransition = String.valueOf(p.masterTransition);
     mColor = new MunsellColor(p.mColor);
@@ -120,6 +123,7 @@ class ColorPatch
     oos.writeFloat(xMin); oos.writeFloat(xMax); oos.writeFloat(yMin); oos.writeFloat(yMax);
     oos.writeFloat(masterGray);
     oos.writeFloat(masterHue);
+    oos.writeFloat(masterChroma);
     oos.writeFloat(masterTension);
     oos.writeObject(masterTransition);
     mColor.Serialize(oos);
@@ -137,6 +141,7 @@ class ColorPatch
     xMin = ois.readFloat(); xMax = ois.readFloat(); yMin = ois.readFloat(); yMax = ois.readFloat();
     masterGray = ois.readFloat();
     masterHue = ois.readFloat();
+    masterChroma = ois.readFloat();
     masterTension = ois.readFloat();
     masterTransition = (String)ois.readObject();
     mColor = new MunsellColor(); mColor.Deserialize(ois);
@@ -174,13 +179,15 @@ class ColorPatch
     return bChanged;
   }
   
-  // Set master hue from a Munsell color. Return true if changed
+  // Set master hue and chroma from a Munsell color. Return true if changed
   public boolean setMasterHue(MunsellColor mc)
   {
     float masterHueNew = mc.isGray() ? -1 : mc.hueDegree;
+    float masterChromaNew = mc.isGray() ? -1 : mc.chroma;
     boolean bChanged = false;
-    if (masterHue != masterHueNew) {
+    if (masterHue != masterHueNew || masterChroma != masterChromaNew) {
       masterHue = masterHueNew;
+      masterChroma = masterChromaNew;
       bChanged = true;
     }
     return bChanged;
@@ -270,14 +277,13 @@ class ColorPatch
   // Scale all the pixel locations within the patch
   public void scale(float xScale, float yScale)
   {
+    // Scale the points. This effectively scale contour as well
+    // because contour points are just references to regular area points.
     for (PVector p : points) {
       p.x *= xScale;
       p.y *= yScale;
     }
-    for (PVector p : contourPoints) {
-      p.x *= xScale;
-      p.y *= yScale;
-    }
+
     xMin *= xScale;
     xMax *= xScale;
     yMin *= xScale;
@@ -316,13 +322,18 @@ class ColorPatch
       case areaViewMGray: // Draw master gray-level of the patches
         drawPoints(img, colorTable.munsellToRGB(new MunsellColor(0, 0, masterGray)));
         break;
-      case areaViewMHue: // Draw master hue of the patches
-        // use value=12, chroma=10 to cover all hues
-        float v = 12;
-        float ch = (masterHue < 0) ? 0 : 10;
+      case areaViewMHue: // Draw master hue & chroma of the patches
+        float ch = (masterHue < 0) ? 0 : masterChroma;
         float x = ch * cos(radians(masterHue));
         float y = ch * sin(radians(masterHue));
-        drawPoints(img, colorTable.munsellToRGB(new MunsellColor(x, y, v)));
+        int[] vd = {0, -2, +2, -4, +4, -6, +6};
+        for (int i = 0; i < vd.length; i++) {  // pick a value near 12 for the hue/chroma
+          MunsellColor mc = new MunsellColor(x, y, 12 + vd[i]);
+          if (colorTable.isMunsellKeyInMap(mc)) {
+            drawPoints(img, colorTable.munsellToRGB(mc));
+            break;
+          }
+        }
         break;
       case areaViewTension: // Draw tension of the local color
       case areaViewMTension: // Draw master tension
