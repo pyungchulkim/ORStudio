@@ -206,38 +206,9 @@ class MunsellColor
     PVector c3 = c1.copy().add(PVector.mult(c2, ratio)).div(1 + ratio);
     return new MunsellColor(c3);
   }
-  
-  // Obtain a complementary color: the opposite location in the sphere.
-  // The value of the complementary is set to n if valid, opposite otherwise.
-  public MunsellColor getComplementary(float n)
-  {
-    PVector cd = getCoordinate();
-    float v = (n >= 0 && n <= 20) ? n : 10 - (cd.z - 10);
-    return new MunsellColor(-cd.x, -cd.y, v);
-  }
-  // Obtain a hue-variant: rotate hue by delta within the same value/chroma
-  // Each unit in 'delta' indicates one in 40 hue sectors (hueDegreePerSector)
-  public MunsellColor getHueVariant(int delta)
-  {
-    float a = hueDegree + delta * hueDegreePerSector;
-    if (a >= 360) a -= 360;
-    if (a < 0) a += 360;
-    float r = radians(a);
-    return new MunsellColor(chroma * cos(r), chroma * sin(r), value);
-  }
-  // Obtain a chroma-variant: move chroma by delta within the same hue/value
-  public MunsellColor getChromaVariant(int delta)
-  {
-    return new MunsellColor(hueCode, hueNumber, value, chroma + delta);
-  }
-  // Obtain a value-variant: move value by delta within the same hue/chroma
-  public MunsellColor getValueVariant(int delta)
-  {
-    return new MunsellColor(hueCode, hueNumber, value + delta, chroma); //<>//
-  }
 }
-
-// Get hue code at the current x, y location of hue circle
+  
+// Get hue code at the current x, y location of hue circle //<>//
 String getMunsellHueCode(float x, float y) 
 {
   // Obtain the angle in degree

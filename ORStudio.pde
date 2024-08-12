@@ -670,7 +670,7 @@ void doAction(int area)
         pushUndoPainting();
 
         boolean bChanged = false;
-        // change the patch with the selected color or the last transition spec
+        // change the patch according to the selected color or the current patch
         Painting cp = paintings.get(currPaintingIdx);
         pi = cp.findPatchIdx(mouseX - imgX, mouseY - imgY);
         if (pi >= 0) {
@@ -680,6 +680,8 @@ void doAction(int area)
           switch (viewMode) {
             case areaViewColors: 
               bChanged = p.setColor(mc);
+              if (bChanged)
+                cp.updateStatistics();
               break;
             case areaViewMGray: 
               bChanged = p.setMasterGray(mc); 
@@ -694,17 +696,15 @@ void doAction(int area)
             case areaViewMTransition: 
               if (pp != null) {
                 // no drag or shift-drag: replace it
-                // dragging: replace it only the empty ones
-                if (!bDrag || bShift || p.masterTransition.isEmpty())
+                // dragging: replace it only if the mouse is in black area
+                if (!bDrag || bShift || get(mouseX, mouseY) == color(0))
                   bChanged = p.setMasterTransition(pp.masterTransition);
               }
               break;
             default: break;
           }
         }
-        if (bChanged)
-          cp.updateStatistics();
-        else
+        if (!bChanged)
           popUndoPainting();  // throw away the last push as nothing has changed
       }
       if (!bDrag && pi >= 0)
@@ -983,7 +983,14 @@ void ctrlMTension(float v) {
 public void ctrlMTransition(String str) {
   if (currPaintingIdx >= 0 && currPatchIdx >= 0) {
     pushUndoPainting();
-    paintings.get(currPaintingIdx).patches.get(currPatchIdx).setMasterTransition(str);
+    if (str.length() > 0 && str.charAt(str.length() - 1) == '!') {
+      // Special case - '!' at the end indicates replace all matching transition to new one
+      String strOld = paintings.get(currPaintingIdx).patches.get(currPatchIdx).masterTransition;
+      String strNew = str.substring(0, str.length() - 1);
+      paintings.get(currPaintingIdx).replaceMasterTransition(strOld, strNew);
+    }
+    else
+      paintings.get(currPaintingIdx).patches.get(currPatchIdx).setMasterTransition(str);
   }
 }
 

@@ -1,5 +1,4 @@
 // Constants - some are fuzzy, picked based upon by my experimentation
-final int minPatchSize = 10;  // min # of pixels excluding contour to form a patch
 final int contourColorThreshold = 60;  // RGB diff to identify contour line
 
 // flag to show contour lines
@@ -208,7 +207,7 @@ class ColorPatch
 
   // Parse master transition string into rules.
   // A non-empty transition string has the following format:
-  // "<ref>/rule{/rule}", where 'ref' indicates referenced patch index, and
+  // "<ref>{/rule}", where 'ref' indicates referenced patch index, and
   // each rule 'rule', seperated by '/', indicates movement of hue/chroma
   // relative to the hue/chroma of reference, as follows:
   //  "H<delta>" - Move hue by delta. Delta is a directional unit of 40 hue sectors.

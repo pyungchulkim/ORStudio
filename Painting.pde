@@ -455,6 +455,16 @@ class Painting
       updateStatistics();  // Re-calculate stats
   }
 
+  // Replace masterTransition of the painting in batch
+  public void replaceMasterTransition(String strOld, String strNew)
+  {
+    strOld = trim(String.valueOf(strOld)).toUpperCase();
+    for (ColorPatch p : patches) {
+      if (p.masterTransition.equals(strOld))
+        p.setMasterTransition(strNew);
+    }
+  }
+
   // Create string for the painting statistics
   public String getStatString()
   {
@@ -617,15 +627,13 @@ class Painting
         if (abs(mp.masterTension - centroid.getGap(c)) > tensionGap)
         continue;
       }
-      if (mp.transRefIdx >= 0) {
+      if (mp.transRefIdx >= 0 && mp.transRefIdx < patches.size() && mp.transRefIdx != mp.id) {
         // master transition is specified; match if it complies with the transition
-        if (mp.transRefIdx >= patches.size() || mp.transRefIdx == mp.id)
-          continue;  // an invalid reference patch
         
         MunsellColor mcRef = patches.get(mp.transRefIdx).mColor;
         if (mcRef.isGray()) {
           nmc = munsellBlack;
-          continue;  // pick gray to indicate wait until reference patch has been painted
+          continue;  // pick gray to wait until reference patch has been painted
         }
         
         // Apply the transition rule to the reference
@@ -665,10 +673,12 @@ class Painting
   // Illustrate all the patches according to the transition specification.
   // See comments of ColorPatch::parseTransParams() for transition spec.
   // An illustrative color for a transition rule is calculated as follows:
-  //  (1) If there is no rule, use masterHue and masterGray. If no masterHue and
-  //      masterGray is specified, use black.
-  //  (2) If the rule is 'A', use the same color as ref.
-  //  (3) Otherwise, use the color by interpreting the rule. In order to
+  //  (1) If there is no reference, use black (unspecified).
+  //  (2) If it references to itself, use 5G10/12. Self-reference is only for illustration purpose.
+  //      This patch is used as starting point of a reference chain.
+  //      Actual painting for this patch will treat it as the same as unspecified.
+  //  (3) If the rule is 'A', use the same color as ref.
+  //  (4) Otherwise, use the color by interpreting the rule. In order to
   //      make sure the illustrative color is a valid one, it caps the value
   //      range within [2, 18], and then, it tries to pick the nearest chroma
   //      that matches the spec within Munsell shpere.
@@ -678,19 +688,10 @@ class Painting
     for (ColorPatch p : patches)
       p.parseTransParams();
 
-    // First pass: initialize patches with no rules with masterHue/masterGray
-    // or black otherwise.
+    // First pass: initialize all patches as either green (self-reference) or black (unspecified).
+    MunsellColor mcG = new MunsellColor("G", 5.0, 10, 12);
     for (ColorPatch p : patches) {
-      MunsellColor mc = munsellBlack;
-      if (p.transRefIdx < 0 && p.masterHue >= 0 && p.masterChroma >= 2 && p.masterGray >= 0) {
-        // a valid point at hue circle to transition anywhere
-        float x = p.masterChroma * cos(radians(p.masterHue));
-        float y = p.masterChroma * sin(radians(p.masterHue));
-        mc = new MunsellColor(x, y, p.masterGray);
-        if (!colorTable.isMunsellKeyInMap(mc))
-          mc = munsellBlack;
-      }
-      p.setColor(mc);
+      p.setColor(p.transRefIdx == p.id ? mcG : munsellBlack);
     }
 
     // Second pass: illustrate the patches with references.
@@ -703,7 +704,7 @@ class Painting
         if (p.transRefIdx < 0 || !p.mColor.isGray())
           continue;  // done
           
-        if (p.transRefIdx >= patches.size() || p.transRefIdx == p.id)
+        if (p.transRefIdx >= patches.size())
           continue;  // an invalid reference patch
           
         MunsellColor mcRef = patches.get(p.transRefIdx).mColor;
@@ -978,6 +979,7 @@ Painting buildPatchesFromContour(PImage imgSrc, color cBase, color cContour, PIm
         imgMark.set(px, py, cVisited);
         
         // Try neighbors. Also add it to contour if a neighbor is boundary
+        boolean bContour = false;
         PVector[] arrNPV = new PVector[4];
         arrNPV[0] = new PVector(px + 1, py);
         arrNPV[1] = new PVector(px - 1, py);
@@ -990,15 +992,17 @@ Painting buildPatchesFromContour(PImage imgSrc, color cBase, color cContour, PIm
               cBase != 0 && rgbDistance(s, cBase) >= contourColorThreshold ||
               cBase == 0 && rgbDistance(s, cContour) < contourColorThreshold)
           {  // this neighbor is the boundary
-            contourPoints.add(pv);
+            bContour = true;
           }
           else {  // continue to explore this
             ps.push(npv);
           }
         }
+        if (bContour)
+          contourPoints.add(pv);
       }
       
-      if ((points.size() - contourPoints.size()) > minPatchSize) {
+      if ((points.size() - contourPoints.size()) > 0) {
         ColorPatch p = new ColorPatch(patches.size(), imgSrc, points, contourPoints);
         patches.add(p);
         p.drawPoints(imgMark, cDone); // mark its area as done
@@ -1063,7 +1067,7 @@ Painting buildPatchesFromSolid(PImage imgSrc, color cSkip, PImage imgScaleTo)
   for (Map.Entry<Integer, ArrayList<PVector> > m : mapPoints.entrySet()) {
     ArrayList<PVector> points = m.getValue();
     ArrayList<PVector> contourPoints = mapContourPoints.get(m.getKey());
-    if ((points.size() - contourPoints.size()) > minPatchSize) {
+    if ((points.size() - contourPoints.size()) > 0) {
       ColorPatch p = new ColorPatch(patches.size(), imgSrc, points, contourPoints);
       patches.add(p);
     }
