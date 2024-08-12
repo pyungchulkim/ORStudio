@@ -326,7 +326,6 @@ ArrayList<Painting> paintings = null;  // the current painting collection
 Painting storedPainting = null; // the stored painting to restore to later
 int currPaintingIdx = -1;  // current painting index
 int currPatchIdx = -1;  // current patch being viewed and edited
-int lastPatchIdx = -1;  // last patch on display
 int undoPaintingIdx = -1;  // index of the painting saved for undo
 Stack<Painting> undoPaintings = null;  // paintings save for undo
 int maxUndoPaintings = 200;  // max # of undo operations
@@ -549,9 +548,6 @@ void doAction(int area)
       if (mouseButton == LEFT) {
         // Synchronize the three areas with the selected color
         updateSelectedColor();
-        MunsellColor mc = colorTable.rgbToMunsell(colorSelected);
-        drawMunsellValueChroma(mc, vcX, vcY, vcWidth, vcHeight);
-        drawMunsellHueCircle(hX, hY, hRadius, mc);
       }
       break;
       
@@ -606,7 +602,7 @@ void doAction(int area)
       if (mouseButton == LEFT && currPaintingIdx >= 0) {
         // Current painting becomes the master for all new paintings in the collection
         Painting p = paintings.get(currPaintingIdx);
-        painter = new Painter(ctrlNumPaintings, p, chords, ctrlCentroid, 
+        painter = new Painter(p, chords, ctrlNumPaintings, ctrlCentroid, 
                               ctrlHueVariance, ctrlTensionScale, ctrlComplexity);
         paintings.clear();
         paintings.add(p);
@@ -769,15 +765,13 @@ void keyPressed()
   else if (key == 'l' || key == 'L')
     bShowReferenceLine = !bShowReferenceLine;
   else if (key == 26) {  // ctrl-Z: undo the last edit of the painting if still at the same painting
-    if (undoPaintingIdx == currPaintingIdx) {
-      Painting up = popUndoPainting();
-      if (up != null) {
-        paintings.set(currPaintingIdx, up);
-        drawTextBox("Update is undone.", msgX, msgY, msgWidth, msgHeight);
-      }
-      else
-        drawTextBox("Nothing to undo.", msgX, msgY, msgWidth, msgHeight);
+    Painting up = popUndoPainting();
+    if (up != null) {
+      paintings.set(currPaintingIdx, up);
+      drawTextBox("Update is undone.", msgX, msgY, msgWidth, msgHeight);
     }
+    else
+      drawTextBox("Nothing to undo.", msgX, msgY, msgWidth, msgHeight);
   }
   else if (key > 0 && key < 128) {  // pass it to the current painting to update
     pushUndoPainting();
@@ -897,15 +891,8 @@ void draw()
     }
     
     // display the current painting stats
-    String str = "Painting No. " + currPaintingIdx +
-                 "\n# of Patches: " + currPainting.patches.size() +
-                 "\nCentroid: " + currPainting.centroid.getString() +
-                 "\nGray Tension: " + String.format("%.2f", currPainting.grayTension[0]) +
-                 " (C: " + String.format("%.1f", currPainting.grayTension[1]) + ")" +
-                 "\nTension: " + String.format("%.1f", currPainting.tension[0]) +
-                 " (C: " + String.format("%.1f", currPainting.tension[1]) + ")" +
-                 "\nTension Gap: " + String.format("%.1f", currPainting.tensionGap) +
-                 "\nComplexity: " + String.format("%.1f", currPainting.complexity);
+    String str = "Painting No. " + currPaintingIdx + "\n";
+    str += currPainting.getStatString();
     drawTextBox(str, statX, statY, statWidth, statHeight);
     
     // Refresh color points plot
@@ -926,6 +913,9 @@ void updateSelectedColor()
 {
   colorSelected = get(mouseX, mouseY);
   drawSelectedColor();
+  MunsellColor mc = colorTable.rgbToMunsell(colorSelected);
+  drawMunsellValueChroma(mc, vcX, vcY, vcWidth, vcHeight);
+  drawMunsellHueCircle(hX, hY, hRadius, mc);
 }
 
 // Draw currently selected color
@@ -952,13 +942,12 @@ void drawPatchInfo()
       cp5.getController("ctrlMTension").remove();
       cp5.getController("ctrlMTransition").remove();
     }
-    lastPatchIdx = -1;
   }
-  else if (currPaintingIdx >= 0 && currPatchIdx != lastPatchIdx) {
+  else if (currPaintingIdx >= 0) {
     ColorPatch p = paintings.get(currPaintingIdx).patches.get(currPatchIdx);
     
     // display the current patch info
-    drawTextBox(p.getString(), infoX, infoY, infoWidth, infoHeight);
+    drawTextBox(p.getStatString(), infoX, infoY, infoWidth, infoHeight);
     if (cp5.getController("ctrlMTension") == null) {
       int x = infoX;
       int y = infoY + infoHeight;
@@ -973,19 +962,24 @@ void drawPatchInfo()
     }
     else {
       cp5.getController("ctrlMTension").setValue(p.masterTension);
-      ((Textfield)cp5.getController("ctrlMTransition")).setValue(p.masterTransition);
+      Textfield tf = (Textfield)cp5.getController("ctrlMTransition");
+      if (tf != null && !tf.isActive())
+        tf.setValue(p.masterTransition);
     }
-    
-    lastPatchIdx = currPatchIdx;
   }
 }
-// Callback for tension and transition controls
+// Callback for tension changes - NOTE that P5 Slider controll calls back at every setValue()
+// even if it sets initial value by draw(). I have to avoid push paintings from this useless callbacks.
 void ctrlMTension(float v) {
   if (currPaintingIdx >= 0 && currPatchIdx >= 0) {
-    pushUndoPainting();
-    paintings.get(currPaintingIdx).patches.get(currPatchIdx).setMasterTension(v); 
+    ColorPatch p = paintings.get(currPaintingIdx).patches.get(currPatchIdx);
+    if (p.masterTension != v) {
+      pushUndoPainting();
+      p.setMasterTension(v);
+    }
   }
 }
+// Callback for transition controls
 public void ctrlMTransition(String str) {
   if (currPaintingIdx >= 0 && currPatchIdx >= 0) {
     pushUndoPainting();
@@ -1322,6 +1316,7 @@ void serializeStudio(String path)
     for (Chord ch : chords) {
       ch.Serialize(oos);
     }
+    oos.writeInt(ctrlNumPaintings);
     ctrlCentroid.Serialize(oos);
     oos.writeFloat(ctrlHueVariance);
     oos.writeFloat(ctrlTensionScale);
@@ -1348,6 +1343,7 @@ Painting deserializeStudio(String path)
       ch.Deserialize(ois);
       ch.generateColors();
     }
+    ctrlNumPaintings = ois.readInt();
     ctrlCentroid.Deserialize(ois);
     ctrlHueVariance = ois.readFloat();
     ctrlTensionScale = ois.readFloat();

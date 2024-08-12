@@ -12,19 +12,21 @@ boolean bClearNeeded = false;
 // to the target parameters
 public class Painter
 {
-  int maxPaintings;  // max # of paintings in the collection
   Painting master;  // the master specification for the collection of paintings
   ArrayList<MunsellColor> colors;  // colors to use for painting
+  int maxPaintings;  // max # of paintings in the collection
+  MunsellColor centroid;  // the centroid to use to calcualte master tension
+  float hueVariance;  // variance to apply to adjust master hue
+  float tensionScale;  // scale to apply to adjust master tension spec
   float[] targetComplexity;  // target complexity: min, max
 
   ArrayList<Painting> paintings;  // the paintings
   int currPaintingIdx;  // current painting to work on
   
   // Constructor from parameters
-  public Painter(int n, Painting mp, Chord[] ch, MunsellColor c, float hv, float ts, float[] tc)
+  public Painter(Painting mp, Chord[] ch, int n, MunsellColor c, float hv, float ts, float[] tc)
   {
-    maxPaintings = n;
-    master = new Painting(mp, c, hv, ts);
+    master = mp;
     
     // Obtain paint-ready colors from the chords
     colors = getColorsFromAllChords(ch);
@@ -36,6 +38,10 @@ public class Painter
       colors.set(j, mc);
     }
     
+    maxPaintings = n;
+    centroid = c;
+    hueVariance = hv;
+    tensionScale = ts;
     targetComplexity = tc;
   }
   
@@ -47,7 +53,9 @@ public class Painter
     // Populate initial paintings with no colors
     for (int i = 0; i < maxPaintings; i++) {
       Painting p = new Painting(master);
-      p.paint(null);
+      // reset as unpainted
+      for (ColorPatch cp : p.patches)
+        cp.mColor = munsellBlack;
       p.updateStatistics();
       paintings.add(p);
     }
@@ -59,8 +67,8 @@ public class Painter
   public int paintOne()
   {
     Painting p = paintings.get(currPaintingIdx);
-    if (p.complexity < 1E-10) {  // consider not painted yet
-      p.paint(colors);
+    if (p.coverage < 0.01) {  // consider not painted yet
+      p.paint(colors, centroid, hueVariance, tensionScale);
       p.updateStatistics();
     }
     else {  // painted already - optimize if needed
@@ -68,7 +76,7 @@ public class Painter
                 (p.complexity > targetComplexity[1]) ? -1 : 0;
       if (dir != 0) {
         // Optimize for complexity
-        p.optimizeForComplexity(dir, colors);
+        p.optimizeForComplexity(dir, colors, centroid, hueVariance, tensionScale);
         p.updateStatistics();
       }
     }
@@ -86,62 +94,42 @@ public class Painter
 class Painting
 {
   public int imgWidth, imgHeight;  // dimension of the painting
-  public ArrayList<ColorPatch> patches;  // the patches. NOTE: not a copy but a reference.
+  public ArrayList<ColorPatch> patches;  // the patches
   public MunsellColor centroid;  // the centroid color
-  public float hueVariance;  // tolerable hue range from master hue
-  public float tensionScale;  // scale factor for the master tension value
-  
-  float[] grayTension;  // statistics: gray tension and its complexity (entropy)
-  float[] tension;  // statistics: color tension and its complexity (entropy)
-  float tensionGap;  // MSE to the target tension
-  float complexity;  // entropy of distinct colors and their areas
+  float tension;  // statistics: color tension
+  float tensionComplexity;  // statistics: color tension complexity (entropy)
+  float complexity;  // statistics: color complexity (entropy)
+  float coverage;  // statistics: percentage of area that have been painted
   
   // default constructor
   public Painting() {}
   
   // Constructor from patches
-  public Painting(int w, int h, ArrayList<ColorPatch> p, MunsellColor mc)
+  public Painting(int w, int h, ArrayList<ColorPatch> ps)
   {
     imgWidth = w;
     imgHeight = h;
-    patches = p;
-    centroid = mc;
-    hueVariance = 0;
-    tensionScale = 1;
+    patches = ps;
+    
     updateStatistics();
   }
 
-  // Copy constructor: copy everything with new painter parameters: centroid, 
-  // hue range, tension scale. Note that it refreshes all stats if centroid is new.
-  public Painting(Painting org, MunsellColor mc, float hv, float ts)
+  // Copy constructor: copy everything from a painting.
+  public Painting(Painting org)
   {
     imgWidth = org.imgWidth;
     imgHeight = org.imgHeight;
     ArrayList<ColorPatch> newPatches = new ArrayList<ColorPatch>();
-    for (ColorPatch p : org.patches) {
+    for (ColorPatch p : org.patches)
       newPatches.add(new ColorPatch(p));
-    }
     patches = newPatches;
-    centroid = new MunsellColor(mc);
-    hueVariance = hv;
-    tensionScale = ts;
-    if (centroid.isEqual(org.centroid)) {  // all the stats remain the same
-      grayTension = org.grayTension.clone();
-      tension = org.tension.clone();
-      tensionGap = org.tensionGap;
-      complexity = org.complexity;
-    }
-    else {  // different centroid - stats need update
-      updateStatistics();
-    }
+    centroid = new MunsellColor(org.centroid);
+    tension = org.tension;
+    tensionComplexity = org.tensionComplexity;
+    complexity = org.complexity;
+    coverage = org.coverage;
   }
 
-  // Copy constructor: simple case that copies everything
-  public Painting(Painting org)
-  {
-    this(org, org.centroid, org.hueVariance, org.tensionScale);
-  }
-  
   // Serialize to save
   public void Serialize(ObjectOutputStream oos) throws IOException
   {
@@ -150,12 +138,10 @@ class Painting
     oos.writeInt(patches.size());
     for (ColorPatch p : patches) p.Serialize(oos);
     centroid.Serialize(oos);
-    oos.writeFloat(hueVariance);
-    oos.writeFloat(tensionScale);
-    oos.writeFloat(grayTension[0]); oos.writeFloat(grayTension[1]);
-    oos.writeFloat(tension[0]); oos.writeFloat(tension[1]);
-    oos.writeFloat(tensionGap);
+    oos.writeFloat(tension);
+    oos.writeFloat(tensionComplexity);
     oos.writeFloat(complexity);
+    oos.writeFloat(coverage);
   }
 
   // Deserialize to load
@@ -170,14 +156,23 @@ class Painting
       patches.add(p);
     }
     centroid = new MunsellColor(); centroid.Deserialize(ois);
-    hueVariance = ois.readFloat();
-    tensionScale = ois.readFloat();
-    grayTension = new float[2]; grayTension[0] = ois.readFloat(); grayTension[1] = ois.readFloat();
-    tension = new float[2]; tension[0] = ois.readFloat(); tension[1] = ois.readFloat();
-    tensionGap = ois.readFloat();
+    tension = ois.readFloat();
+    tensionComplexity = ois.readFloat();
     complexity = ois.readFloat();
+    coverage = ois.readFloat();
   }
   
+  // Update centroid.
+  public void updateCentroid()
+  {
+    centroid = null;
+    float areaSum = 0;
+    for (ColorPatch p : patches) {
+      centroid = (centroid == null) ? p.mColor : centroid.getMixture(p.mColor, p.getSize() / areaSum);
+      areaSum += p.getSize();
+    }
+  }
+
   // Update gap values of all patches relative to centroid.
   public void updateGap()
   {
@@ -189,7 +184,7 @@ class Painting
   
   // Calculate color tension and tension complexity over all patches.
   // Color tension of a painting indicates how much color tension is
-  // created by the patches in relation to surrounding color area (centroid).
+  // created by the patches in relation to average color of the painting (centroid).
   // I use mean square deviation (MSD) for the measurement of the tension.
   // Smaller MSD indicates that all patches are similar to centroid
   // while larger MSD indicates patches have quite different colors to centroid.
@@ -208,43 +203,19 @@ class Painting
   // For instance, variance of 20 yields complexity of 2.917.
   public void calculateTension()
   {
-    grayTension = new float[2];  // gray tension (MSD), and its complexity (entropy).
-    tension = new float[2];  // color tension (MSD), and its complexity (entropy).
-
     // Calculate MSD
-    float sumG = 0, sumC = 0;
-    float ssumG = 0, ssumC = 0;
-    float area = 0;
+    float sum, ssum, area;
+    sum = ssum = area = 0;
     for (ColorPatch p : patches) {
-      sumG += p.gGap * p.getSize();
-      sumC += p.cGap * p.getSize();
-      ssumG += p.gGap * p.gGap * p.getSize();
-      ssumC += p.cGap * p.cGap * p.getSize();
+      sum += p.cGap * p.getSize();
+      ssum += p.cGap * p.cGap * p.getSize();
       area += p.getSize();
     }
-    float msdG = ssumG / area;
-    float msdC = ssumC / area;
+    tension = ssum / area;
     
     // Calculate entropy over Gaussian variance
-    float varG = (ssumG - sumG * sumG / area) / (area - 1);
-    float varC = (ssumC - sumC * sumC / area) / (area - 1);
-    float entropyG =  0.5 * log(TWO_PI * varG) + 0.5;
-    float entropyC =  0.5 * log(TWO_PI * varC) + 0.5;
-    
-    grayTension[0] = msdG;
-    grayTension[1] = entropyG;
-    tension[0] = msdC;
-    tension[1] = entropyC;
-    
-    // Calculate Tension gap as mean square error
-    // TODO: The calculation is based up pixels (i.e., getArea()), 
-    // but is our experience of tension "linear proportional" to the area?
-    float ssumErr = 0;
-    for (ColorPatch p : patches) {
-      float td = p.cGap - p.masterTension;
-      ssumErr += td * td * p.getSize();
-    }
-    tensionGap = ssumErr / area;
+    float v = (ssum - sum * sum / area) / (area - 1);
+    tensionComplexity = 0.5 * log(TWO_PI * v) + 0.5;
   }
   
   // Calculate Color Complexity.
@@ -310,31 +281,44 @@ class Painting
   // Update all statistics of the painting
   public void updateStatistics()
   {
+    updateCentroid();
     updateGap();
     calculateTension();
     calculateComplexity();
+    float areaTotal, areaNotPainted;
+    areaTotal = areaNotPainted = 0;
+    for (ColorPatch p : patches) {
+      areaTotal += p.getSize();
+      if (p.mColor.isGray())
+        areaNotPainted += p.getSize();
+    }
+    coverage = 1 - areaNotPainted / areaTotal;
   }
   
   // Update the painting:
   // 'what' indicates what part of the painting to update,
   // 'how' indicates how to update.
-  // c1, c2 are the from/to colors to convert master hue for 'r' command
+  // c1, c2 are the from/to colors to convert master hue for 'r' command.
+  // If the update affects stats, it will update statistics as well.
   public void update(int what, char how, MunsellColor mc1, MunsellColor mc2)
   {
     int dir;
+    boolean bUpdateStats = false;  // indicate stats to be updated
     
     switch (how) {
       case 'p':  
       case 'P':  //  copy from current painting (gray, hue or tension)
         if (what == areaViewMGray)
-          for (ColorPatch p : patches) p.masterGray = p.mColor.value;
+          for (ColorPatch p : patches) 
+            p.masterGray = p.mColor.value;
         if (what == areaViewMHue)
           for (ColorPatch p : patches) {
             p.masterHue = p.mColor.isGray() ? -1 : p.mColor.hueDegree;
             p.masterChroma = p.mColor.isGray() ? -1 : p.mColor.chroma;
           }
         if (what == areaViewMTension)
-          for (ColorPatch p : patches) p.masterTension = p.cGap;
+          for (ColorPatch p : patches) 
+            p.masterTension = p.cGap;
         break;
         
       case '+':  // scale up gray or tension by 10% from the current average
@@ -401,30 +385,45 @@ class Painting
 
       case 'c':  // clear (reset) color, gray, hue or tension
       case 'C':
-        if (what == areaViewColors)
-          for (ColorPatch p : patches) p.setColor(munsellBlack);
+        if (what == areaViewColors) {
+          for (ColorPatch p : patches) 
+            p.setColor(munsellBlack);
+          bUpdateStats = true;
+        }
         if (what == areaViewMGray)
-          for (ColorPatch p : patches) p.masterGray = 0;
+          for (ColorPatch p : patches) 
+            p.masterGray = 0;
         if (what == areaViewMHue)
-          for (ColorPatch p : patches) p.masterHue = p.masterChroma = -1;
+          for (ColorPatch p : patches) 
+            p.masterHue = p.masterChroma = -1;
         if (what == areaViewMTension)
-          for (ColorPatch p : patches) p.masterTension = 0;
-        if (what == areaViewMTransition)
-          for (ColorPatch p : patches) p.masterTransition = "";
+          for (ColorPatch p : patches) 
+            p.masterTension = 0;
+        if (what == areaViewMTransition) {
+          for (ColorPatch p : patches) {
+            p.masterTransition = "";
+            p.transParsed = false;
+          }
+        }
         break;
         
       case 'g':  // change the colors to gray
       case 'G':
-        if (what == areaViewColors)
-          for (ColorPatch p : patches) p.setColor(new MunsellColor(0, 0, p.mColor.value));
+        if (what == areaViewColors) {
+          for (ColorPatch p : patches) 
+            p.setColor(new MunsellColor(0, 0, p.mColor.value));
+          bUpdateStats = true;
+        }
         break;
         
       case 'r':  // replace master hue or color from mc1 to mc2
       case 'R':
         if (what == areaViewColors && mc1 != null && mc2 != null) {
           for (ColorPatch p : patches) {
-            if (mc1.getGap(p.mColor) < similarColorGap)
+            if (mc1.getGap(p.mColor) < similarColorGap) {
               p.setColor(mc2);
+              bUpdateStats = true;
+            }
           }
         }
         if (what == areaViewMHue && mc1 != null && mc2 != null) {
@@ -452,7 +451,19 @@ class Painting
         break;
     }
 
-    updateStatistics();  // Re-calculate stats against changed master
+    if (bUpdateStats)
+      updateStatistics();  // Re-calculate stats
+  }
+
+  // Create string for the painting statistics
+  public String getStatString()
+  {
+    return "# of Patches: " + patches.size() +
+           "\nPaint Coverage: " + String.format("%.1f%%", coverage * 100) +
+           "\nCentroid: " + centroid.getString() +
+           "\nTension: " + String.format("%.1f", tension) +
+           " (C: " + String.format("%.1f", tensionComplexity) + ")" +
+           "\nComplexity: " + String.format("%.1f", complexity);
   }
 
   // Draw all color patches to the image.
@@ -476,10 +487,10 @@ class Painting
       if (bShowReferenceLine) {  // show reference lines between patches
         // draw reference lines between patches
         for (ColorPatch p : trans.patches) {
-          if (p.transParam1 != transDefault && p.transParam1 != transFixed) {
+          if (p.transRefIdx >= 0) {
             float x1 = (p.xMin + p.xMax) / 2;
             float y1 = (p.yMin + p.yMax) / 2;
-            ColorPatch pRef = trans.patches.get(p.transParam2);
+            ColorPatch pRef = trans.patches.get(p.transRefIdx);
             float x2 = (pRef.xMin + pRef.xMax) / 2;
             float y2 = (pRef.yMin + pRef.yMax) / 2;
             drawLine(img, x1, y1, x2, y2);
@@ -564,30 +575,26 @@ class Painting
     popMatrix();
   }
   
-  // Select a random color that meets master color specification from given colors
-  // Matching master spec in the following order:
-  // - similar gray level, if specified;
-  // - similar hue, if specified
-  // - similar match tension level, if specified
-  // - pick any if nothing specified
+  // Select a random color that meets master color specification from given colors.
+  // If nothing is specified in the master spec, any color is picked.
   // A pure gray will be excluded for selection.
   //
   // Note that transition spec must have been parsed into parameters before this call.
   // It returns null if no color matches. A gray color if its reference patch is
   // not painted yet.
-  MunsellColor selectColor(ColorPatch mp, ArrayList<MunsellColor> colors)
+  MunsellColor selectColor(ColorPatch mp, ArrayList<MunsellColor> colors, MunsellColor centroid, float hueVariance)
   {
     // Select color with less tension gap as possible
     MunsellColor nmc = null;
     for (float tensionGap = 2.0; tensionGap <= similarTensionGap; tensionGap += 2.0) {
-      nmc = selectColorInternal(mp, colors, tensionGap);
+      nmc = selectColorInternal(mp, colors, centroid, hueVariance, tensionGap);
       if (nmc != null)
         break;
     }
     return nmc;
   }
   
-  MunsellColor selectColorInternal(ColorPatch mp, ArrayList<MunsellColor> colors, float tensionGap)
+  MunsellColor selectColorInternal(ColorPatch mp, ArrayList<MunsellColor> colors, MunsellColor centroid, float hueVariance, float tensionGap)
   {
     MunsellColor nmc = null;
     int s = (int)random(colors.size());  // random position to start searching
@@ -610,50 +617,42 @@ class Painting
         if (abs(mp.masterTension - centroid.getGap(c)) > tensionGap)
         continue;
       }
-      if (mp.transParam1 != transDefault) {
+      if (mp.transRefIdx >= 0) {
         // master transition is specified; match if it complies with the transition
-        MunsellColor mcRef = munsellBlack;
-        if (mp.transParam1 != transFixed) {
-          if (mp.transParam2 < 0 || mp.transParam2 >= patches.size() || mp.transParam2 == mp.id)
-            continue;  // an invalid reference patch
-          mcRef = patches.get(mp.transParam2).mColor;
-          if (mcRef.isGray()) {
-            nmc = munsellBlack;
-            continue;  // pick gray to indicate wait until reference patch has been painted
-          }
+        if (mp.transRefIdx >= patches.size() || mp.transRefIdx == mp.id)
+          continue;  // an invalid reference patch
+        
+        MunsellColor mcRef = patches.get(mp.transRefIdx).mColor;
+        if (mcRef.isGray()) {
+          nmc = munsellBlack;
+          continue;  // pick gray to indicate wait until reference patch has been painted
         }
         
-        MunsellColor mc = null;
+        // Apply the transition rule to the reference
         float gap = similarColorGap;
-        switch (mp.transParam1) {
-          case transFixed:
-            mc = new MunsellColor(c);
-            mc.value = mp.transParam2; mc.chroma = mp.transParam3;
-            break;
-          case transComplementary:
-            mc = mcRef.getComplementary(mp.transParam3);
-            break;
-          case transHueVariant:
-            mc = mcRef.getHueVariant(mp.transParam3);
-            break;
-          case transChromaVariant:
-            mc = mcRef.getChromaVariant(mp.transParam3);
-            break;
-          case transValueVariant:
-            mc = mcRef.getValueVariant(mp.transParam3);
-            break;
-          case transAnalogous:
-          default:
-            mc = new MunsellColor(mcRef);
-            gap = mp.transParam3;
-            break;
+        float hueDegree = mcRef.hueDegree;
+        float chroma = mcRef.chroma;
+        float value = mcRef.value;
+        for (int[] r : mp.transRules) {
+          switch (r[0]) {
+            case 'O':  hueDegree += 20 * hueDegreePerSector; break;
+            case 'H':  hueDegree += r[1] * hueDegreePerSector; break;
+            case 'C':  chroma += r[1]; break;
+            case 'V':  value += r[1]; break;
+            case 'A':  gap = r[1]; break;
+            default:   break;
+          }
         }
         // Move it inside the sphere: first value, then chroma
-        mc.value = max(2, min(18, mc.value));
-        mc.chroma = max(2, min(colorTable.getMaxChroma(mc.hueDegree, mc.value), mc.chroma));
+        hueDegree %= 360;
+        if (hueDegree < 0) hueDegree += 360;
+        value = max(2, min(18, value));
+        chroma = max(2, min(colorTable.getMaxChroma(hueDegree, value), chroma));
+        float r = radians(hueDegree);
+        MunsellColor mc = new MunsellColor(chroma * cos(r), chroma * sin(r), value);
       
         if (c.getGap(mc) > gap)
-          continue;
+          continue;  // does not match the transition rule
       }
       
       // It's a match (or no master restriction)
@@ -664,78 +663,87 @@ class Painting
   }
   
   // Illustrate all the patches according to the transition specification.
-  // Colors are selected just enough to illustrate the transition.
-  // Here are the transition specifications and how a color is selected:
-  // (Note that 'ref' indicate the reference patch)
-  //
-  //  transDefault - black.
-  //  transFixed - 5G-value/chroma.
-  //  transComplementary - Color at opposite of ref.
-  //  transHueVariant - Color at delta hue distance from ref.
-  //  transChromaVariant - Color at delta chroma distance from ref.
-  //  transValueVariant - Color at delta value distance from ref.
-  //  transAnalogous - The same color of ref.
-  //
-  // The illustration color pick will always be successful because
-  // (1) the hue is always true relative to 5G; (2) the value will be
-  // capped within [2, 18]; then, (3) it tries to find the nearest chroma
-  // that matches the spec within Munsell shpere.
+  // See comments of ColorPatch::parseTransParams() for transition spec.
+  // An illustrative color for a transition rule is calculated as follows:
+  //  (1) If there is no rule, use masterHue and masterGray. If no masterHue and
+  //      masterGray is specified, use black.
+  //  (2) If the rule is 'A', use the same color as ref.
+  //  (3) Otherwise, use the color by interpreting the rule. In order to
+  //      make sure the illustrative color is a valid one, it caps the value
+  //      range within [2, 18], and then, it tries to pick the nearest chroma
+  //      that matches the spec within Munsell shpere.
   void illustrateMTransition()
   {
-    // Reset to pure black first to indicate failed patches, if any
-    for (ColorPatch p : patches)
-      p.setColor(munsellBlack);
-
     // Populate transition parameters from the spec
     for (ColorPatch p : patches)
       p.parseTransParams();
 
-    // Illustrate the patches according to the transition spec.
+    // First pass: initialize patches with no rules with masterHue/masterGray
+    // or black otherwise.
+    for (ColorPatch p : patches) {
+      MunsellColor mc = munsellBlack;
+      if (p.transRefIdx < 0 && p.masterHue >= 0 && p.masterChroma >= 2 && p.masterGray >= 0) {
+        // a valid point at hue circle to transition anywhere
+        float x = p.masterChroma * cos(radians(p.masterHue));
+        float y = p.masterChroma * sin(radians(p.masterHue));
+        mc = new MunsellColor(x, y, p.masterGray);
+        if (!colorTable.isMunsellKeyInMap(mc))
+          mc = munsellBlack;
+      }
+      p.setColor(mc);
+    }
+
+    // Second pass: illustrate the patches with references.
     // This may require multiple passes as a patch depends on
     // its reference patch to be illustrated first.
     boolean bDone = false;
     while (!bDone) {
       bDone = true;
       for (ColorPatch p : patches) {
-        if (!p.mColor.isGray() || p.transParam1 == transDefault)
+        if (p.transRefIdx < 0 || !p.mColor.isGray())
           continue;  // done
           
-        MunsellColor mcRef = munsellBlack;
-        if (p.transParam1 != transFixed) {
-          if (p.transParam2 < 0 || p.transParam2 >= patches.size() || p.transParam2 == p.id)
-            continue;  // an invalid reference patch
-          mcRef = patches.get(p.transParam2).mColor;
-          if (mcRef.isGray())
-            continue;  // wait until reference patch has been illustrated
-        }
+        if (p.transRefIdx >= patches.size() || p.transRefIdx == p.id)
+          continue;  // an invalid reference patch
+          
+        MunsellColor mcRef = patches.get(p.transRefIdx).mColor;
+        if (mcRef.isGray())
+          continue;  // wait until reference patch has been illustrated
 
-        MunsellColor mc = null;
-        switch (p.transParam1) {
-          case transFixed:         mc = new MunsellColor("G", 5, p.transParam2, p.transParam3); break;
-          case transComplementary: mc = mcRef.getComplementary(p.transParam3); break;
-          case transHueVariant:    mc = mcRef.getHueVariant(p.transParam3); break;
-          case transChromaVariant: mc = mcRef.getChromaVariant(p.transParam3); break;
-          case transValueVariant:  mc = mcRef.getValueVariant(p.transParam3); break;
-          default:
-          case transAnalogous:     mc = mcRef; break;
+        // Now, interpret the transition rule with the reference
+        float hueDegree = mcRef.hueDegree;
+        float chroma = mcRef.chroma;
+        float value = mcRef.value;
+        for (int[] r : p.transRules) {
+          switch (r[0]) {
+            case 'O':  hueDegree += 20 * hueDegreePerSector; break;
+            case 'H':  hueDegree += r[1] * hueDegreePerSector; break;
+            case 'C':  chroma += r[1]; break;
+            case 'V':  value += r[1]; break;
+            case 'A':  break;
+            default:   break;
+          }
         }
-
         // Move it inside the sphere: first value, then chroma
-        mc.value = max(2, min(18, mc.value));
-        mc.chroma = max(2, min(colorTable.getMaxChroma(mc.hueDegree, mc.value), mc.chroma));
-        
-        p.setColor(mc);
+        hueDegree %= 360;
+        if (hueDegree < 0) hueDegree += 360;
+        value = max(2, min(18, value));
+        chroma = max(2, min(colorTable.getMaxChroma(hueDegree, value), chroma));
+        float r = radians(hueDegree);
+        p.setColor(new MunsellColor(chroma * cos(r), chroma * sin(r), value));
+
         bDone = false;  // a new illustrated patch triggers another loop
       }
     }
   }
 
   // Paint all the patches with the colors according to the master color specification.
+  // The centroid, hueVariance, tension scale will affect whether a color matches the master spec.
   // Any patch that cannot find a color meeting the master specification will
   // be painted as pure black.
-  void paint(ArrayList<MunsellColor> colors)
+  void paint(ArrayList<MunsellColor> colors, MunsellColor centroid, float hueVariance, float tensionScale)
   {
-    // Reset to pure black first to indicate failed patches, if any
+    // Reset every patch to black to indicate unpainted.
     for (ColorPatch p : patches)
       p.setColor(munsellBlack);
       
@@ -761,7 +769,7 @@ class Painting
       for (ColorPatch p : patches) {
         if (!p.mColor.isGray())
           continue;  // done this patch
-        MunsellColor mc = selectColor(p, colors);
+        MunsellColor mc = selectColor(p, colors, centroid, hueVariance);
         if (mc == null || mc.isGray()) {
           // no color found or the referenced patch is not painted yet
           continue;
@@ -782,7 +790,7 @@ class Painting
 
   // Replace colors to toward complexity direction: negative for reduce,
   // positive for increase.
-  public void optimizeForComplexity(int dir, ArrayList<MunsellColor> colors)
+  public void optimizeForComplexity(int dir, ArrayList<MunsellColor> colors, MunsellColor centroid, float hueVariance, float tensionScale)
   {
     float rate = 0.5;
     
@@ -801,7 +809,7 @@ class Painting
     // Build an array of the existing colors.
     ArrayList<MunsellColor> colorsExisting = new ArrayList<MunsellColor>();
     for (ColorPatch p : patches) {
-      if (p.transParam1 == transDefault || p.transParam1 == transFixed)
+      if (p.transRefIdx < 0)
         colorsExisting.add(p.mColor);
       else
         colorsExisting.add(munsellBlack);
@@ -809,7 +817,7 @@ class Painting
 
     for (int i = 0; i < patches.size(); i++) {
       ColorPatch p = patches.get(i);
-      if (p.transParam1 != transDefault && p.transParam1 != transFixed)
+      if (p.transRefIdx >= 0)
         continue;  // won't optimize a patch whose color is derived from its reference
         
       if (random(1) > rate)
@@ -822,7 +830,7 @@ class Painting
       if (dir < 0) {  
         // need to reduce complexity; replace with another existing color
         colorsExisting.set(i, munsellBlack);  // take it out
-        MunsellColor mc = selectColor(p, colorsExisting);
+        MunsellColor mc = selectColor(p, colorsExisting, centroid, hueVariance);
         if (mc != null)
           p.setColor(mc);
         colorsExisting.set(i, p.mColor);  // put the new one back
@@ -830,7 +838,7 @@ class Painting
       if (dir > 0) {  
         // need to increase complexity; try a new color up to 5 times.
         for (int j = 0; j < 5; j++) {
-          MunsellColor mc = selectColor(p, colors);
+          MunsellColor mc = selectColor(p, colors, centroid, hueVariance);
           if (mc != null && mc.getGap(p.mColor) > similarColorGap) {
             p.setColor(mc);
             break;
@@ -842,8 +850,8 @@ class Painting
     // Second pass: re-calculate patch colors based on their references that
     // might have been changed in the previous step.
     
-    for (ColorPatch p : patches) {
-      if (p.transParam1 != transDefault && p.transParam1 != transFixed)
+    for (ColorPatch p : patches) {  // reset
+      if (p.transRefIdx >= 0)
         p.setColor(munsellBlack);
     }
     
@@ -851,11 +859,11 @@ class Painting
     while (!bDone) {
       bDone = true;      
       for (ColorPatch p : patches) {
-        if (p.transParam1 == transDefault || p.transParam1 == transFixed)
+        if (p.transRefIdx < 0)
           continue;  // done in the first pass
         if (!p.mColor.isGray())
           continue;  // done this patch
-        MunsellColor mc = selectColor(p, colors);
+        MunsellColor mc = selectColor(p, colors, centroid, hueVariance);
         if (mc == null || mc.isGray()) {
           // no color found or the referenced patch is not painted yet
           continue;
@@ -1009,15 +1017,7 @@ Painting buildPatchesFromContour(PImage imgSrc, color cBase, color cContour, PIm
   else
     imgScaleTo = imgSrc;
   
-  // Calculate centroid
-  float areaSum = 0;
-  MunsellColor centroid = null;
-  for (ColorPatch p : patches) {
-    centroid = (centroid == null) ? p.mColor : centroid.getMixture(p.mColor, p.getSize() / areaSum);
-    areaSum += p.getSize();
-  }
-  
-  return new Painting(imgScaleTo.width, imgScaleTo.height, patches, centroid);
+  return new Painting(imgScaleTo.width, imgScaleTo.height, patches);
 }
 
 // Build a set of color patches from the image, excluding the given colored area.
@@ -1080,15 +1080,7 @@ Painting buildPatchesFromSolid(PImage imgSrc, color cSkip, PImage imgScaleTo)
   else
     imgScaleTo = imgSrc;
   
-  // Calculate centroid
-  float areaSum = 0;
-  MunsellColor centroid = null;
-  for (ColorPatch p : patches) {
-    centroid = (centroid == null) ? p.mColor : centroid.getMixture(p.mColor, p.getSize() / areaSum);
-    areaSum += p.getSize();
-  }
-  
-  return new Painting(imgScaleTo.width, imgScaleTo.height, patches, centroid);
+  return new Painting(imgScaleTo.width, imgScaleTo.height, patches);
 }
 
 // Build a set of color patches from the image.
@@ -1108,15 +1100,7 @@ Painting buildPatchesFromSolidContour(PImage imgSrc, color cBase, PImage imgScal
     p.id += pSolid.patches.size();
   pSolid.patches.addAll(pContour.patches);
   
-  // Calculate the centroid
-  float areaSum = 0;
-  MunsellColor centroid = null;
-  for (ColorPatch p : pSolid.patches) {
-    centroid = (centroid == null) ? p.mColor : centroid.getMixture(p.mColor, p.getSize() / areaSum);
-    areaSum += p.getSize();
-  }
-  
-  return new Painting(pSolid.imgWidth, pSolid.imgHeight, pSolid.patches, centroid);
+  return new Painting(pSolid.imgWidth, pSolid.imgHeight, pSolid.patches);
 }
 
 // Euclidean distance between the two RGB colors

@@ -2,17 +2,8 @@
 final int minPatchSize = 10;  // min # of pixels excluding contour to form a patch
 final int contourColorThreshold = 60;  // RGB diff to identify contour line
 
-// Constants for color transition types
-final int transDefault = 0;
-final int transFixed = 1;
-final int transComplementary = 2;
-final int transHueVariant = 3;
-final int transChromaVariant = 4;
-final int transValueVariant = 5;
-final int transAnalogous = 6;
-
 // flag to show contour lines
-boolean bShowContour = false;
+boolean bShowContour = true;
 
 // Class for an individual Color Patch
 class ColorPatch
@@ -34,9 +25,8 @@ class ColorPatch
   // transient - populated on-demand for performance. no need to serialize
   public PVector coord;  // Color Coordinate
   public boolean transParsed;  // flag if transition parameters have been parsed.
-  public int transParam1;  // 1st transition parameter
-  public int transParam2;  // 2nd transition parameter
-  public int transParam3;  // 3rd transition parameter
+  public int transRefIdx;  // transition reference patch index
+  public ArrayList<int[]> transRules;  // transition rules. [0]: type, [1]: delta
   
   // default constructor
   public ColorPatch() {}
@@ -216,48 +206,50 @@ class ColorPatch
     return bChanged;
   }
 
-  // Parse master transition string into parameters.
-  // The following are possible formats for transition string:
-  //  "" (empty string) - default (unspecified). arbitrary transition.
-  //  "F/V/C" - Fixed color with specified value and chroma in the sphere.
-  //  "C/ref[/value]" - Complementary. Transition to opposite ref in the sphere
-  //                    with optional value
-  //  "H/ref/delta" - Move hue by delta with the same value/chroma from ref.
-  //  "M/ref/delta" - Move chroma by delta with the same hue/value from ref.
-  //  "V/ref/delta" - Move value by delta with the same hue/chroma from ref.
-  //  "A/ref/delta" - Move by delta from ref in any direction in the sphere.
+  // Parse master transition string into rules.
+  // A non-empty transition string has the following format:
+  // "<ref>/rule{/rule}", where 'ref' indicates referenced patch index, and
+  // each rule 'rule', seperated by '/', indicates movement of hue/chroma
+  // relative to the hue/chroma of reference, as follows:
+  //  "H<delta>" - Move hue by delta. Delta is a directional unit of 40 hue sectors.
+  //  "C<delta>" - Move chroma by delta.
+  //  "V<delta>" - Move value by delta.
+  //  "A<delta>" - Move by delta distance in any direction. This rule can appear
+  //               at the end; no rule can be added after this.
+  //  "O"        - Move to the opposite. Equivalent to "H20" or "H-20"
   public void parseTransParams()
   {
     if (transParsed)
       return;  // done already
 
-    transParam1 = transDefault;
-    transParam2 = transParam3 = 0;
-    
+    transRefIdx = -1;
+    transRules = null;
+    if (masterTransition.isEmpty())
+      return;
+      
+    String[] data = masterTransition.split("/");
+    int i = 0;
     try {
-      // get the 1st param - transition type
-      String[] data = masterTransition.split("/");
-      switch (data[0]) {
-        default:
-        case "":  transParam1 = transDefault; break;
-        case "F": transParam1 = transFixed; break;
-        case "C": transParam1 = transComplementary; break;
-        case "H": transParam1 = transHueVariant; break;
-        case "M": transParam1 = transChromaVariant; break;
-        case "V": transParam1 = transValueVariant; break;
-        case "A": transParam1 = transAnalogous; break;
-      }    
-      // get the remaing parameters
-      if (transParam1 != transDefault) {
-        transParam2 = Integer.parseInt(data[1]);
-        if (transParam1 == transComplementary && data.length < 3)
-          transParam3 = -1;  // take default for complementary
-        else
-          transParam3 = Integer.parseInt(data[2]);
+      transRefIdx = Integer.parseInt(data[i++]);  // reference index
+      while (i < data.length) {
+        int[] r = new int[2];
+        r[0] = data[i].charAt(0);
+        if (r[0] != 'H' && r[0] != 'C' && r[0] != 'V' && r[0] != 'A' && r[0] != 'O')
+          break; // invalid rule
+        if (r[0] != 'O')
+          r[1] = Integer.parseInt(data[i].substring(1));
+        if (transRules == null)
+          transRules = new ArrayList<int[]> ();
+        transRules.add(r);
+        i++;
+        if (r[0] == 'A')
+          break;  // no rules can be added after 'A'
       }
-    } catch (Exception e) {
-      transParam1 = transDefault;
-      transParam2 = transParam3 = 0;
+    } catch (Exception e) { }
+    
+    if (i < data.length) {  // prematured break
+      transRefIdx = -1;
+      transRules = null;
     }
     
     transParsed = true;
@@ -290,8 +282,8 @@ class ColorPatch
     yMax *= xScale;
   }
   
-  // Create string for the patch info
-  public String getString()
+  // Create string for the patch statistics
+  public String getStatString()
   {
     return  "Patch ID: " + id +
             "\nArea: " + String.format("%,d", (int)getSize()) +
