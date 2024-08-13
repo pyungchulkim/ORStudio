@@ -215,14 +215,14 @@ class ColorPatch
   //  "V<delta>" - Move value by delta.
   //  "A<delta>" - Move by delta distance in any direction. This rule can appear
   //               at the end; no rule can be added after this.
-  //  "O"        - Move to the opposite. Equivalent to "H20" or "H-20"
+  //  "O"        - Move to the opposite. Equivalent to "H20".
   public void parseTransParams()
   {
     if (transParsed)
       return;  // done already
 
     transRefIdx = -1;
-    transRules = null;
+    transRules = new ArrayList<int[]> ();
     if (masterTransition.isEmpty())
       return;
       
@@ -237,8 +237,6 @@ class ColorPatch
           break; // invalid rule
         if (r[0] != 'O')
           r[1] = Integer.parseInt(data[i].substring(1));
-        if (transRules == null)
-          transRules = new ArrayList<int[]> ();
         transRules.add(r);
         i++;
         if (r[0] == 'A')
@@ -248,7 +246,7 @@ class ColorPatch
     
     if (i < data.length) {  // prematured break
       transRefIdx = -1;
-      transRules = null;
+      transRules = new ArrayList<int[]> ();
     }
     
     transParsed = true;

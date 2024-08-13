@@ -211,9 +211,10 @@ class MunsellColor
 // Get hue code at the current x, y location of hue circle //<>//
 String getMunsellHueCode(float x, float y) 
 {
-  // Obtain the angle in degree
+  // Obtain the angle in degree as [0, 360)
   float a = degrees(atan2(y, x));
-  if (a < 0) a += 360;  // [0, 360)
+  a %= 360;
+  if (a < 0) a += 360;
 
   // Obtain hue code
   int hi = (int)(a / hueDegreePerCode);
@@ -223,9 +224,10 @@ String getMunsellHueCode(float x, float y)
 // Get hue number at the current x, y location of hue circle
 float getMunsellHueNumber(float x, float y) 
 {
-  // Obtain the angle in degree
+  // Obtain the angle in degree as [0, 360)
   float a = degrees(atan2(y, x));
-  if (a < 0) a += 360;  // [0, 360)
+  a %= 360;
+  if (a < 0) a += 360;
 
   // Obtain hue number
   float hn = a % hueDegreePerCode;  // [0, hueDegreePerCode)

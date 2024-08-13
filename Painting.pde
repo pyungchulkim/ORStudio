@@ -674,7 +674,8 @@ class Painting
   // See comments of ColorPatch::parseTransParams() for transition spec.
   // An illustrative color for a transition rule is calculated as follows:
   //  (1) If there is no reference, use black (unspecified).
-  //  (2) If it references to itself, use 5G10/12. Self-reference is only for illustration purpose.
+  //  (2) If it references to itself, use 0R0-0 (black) as reference.
+  //      Self-reference is only for illustration purpose.
   //      This patch is used as starting point of a reference chain.
   //      Actual painting for this patch will treat it as the same as unspecified.
   //  (3) If the rule is 'A', use the same color as ref.
@@ -688,10 +689,9 @@ class Painting
     for (ColorPatch p : patches)
       p.parseTransParams();
 
-    // First pass: initialize all patches as either green (self-reference) or black (unspecified).
-    MunsellColor mcG = new MunsellColor("G", 5.0, 10, 12);
+    // First pass: initialize all patches as black (unspecified).
     for (ColorPatch p : patches) {
-      p.setColor(p.transRefIdx == p.id ? mcG : munsellBlack);
+      p.setColor(munsellBlack);
     }
 
     // Second pass: illustrate the patches with references.
@@ -702,13 +702,13 @@ class Painting
       bDone = true;
       for (ColorPatch p : patches) {
         if (p.transRefIdx < 0 || !p.mColor.isGray())
-          continue;  // done
+          continue;  // done - either no reference or colored already
           
         if (p.transRefIdx >= patches.size())
           continue;  // an invalid reference patch
           
         MunsellColor mcRef = patches.get(p.transRefIdx).mColor;
-        if (mcRef.isGray())
+        if (p.transRefIdx != p.id && mcRef.isGray())
           continue;  // wait until reference patch has been illustrated
 
         // Now, interpret the transition rule with the reference
@@ -729,7 +729,10 @@ class Painting
         hueDegree %= 360;
         if (hueDegree < 0) hueDegree += 360;
         value = max(2, min(18, value));
-        chroma = max(2, min(colorTable.getMaxChroma(hueDegree, value), chroma));
+        int cMax = colorTable.getMaxChroma(hueDegree, value);
+        if (cMax == 0)  // adjust value to have a non-gray color
+          value += (value < 10) ? 2 : -2;
+        chroma = max(2, min(cMax, chroma));
         float r = radians(hueDegree);
         p.setColor(new MunsellColor(chroma * cos(r), chroma * sin(r), value));
 
@@ -1052,13 +1055,14 @@ Painting buildPatchesFromSolid(PImage imgSrc, color cSkip, PImage imgScaleTo)
       }
       assert contourPoints != null : "points and contourPoints are not in sync";
 
-      points.add(new PVector(i, j));
+      PVector pv = new PVector(i, j);
+      points.add(pv);
       // Add it to contour if its neighbor is a boundary
       if (i <= 0 || i >= imgSrc.width - 1 || j <= 0 || j >= imgSrc.height - 1 ||
           c != imgSrc.get(i - 1, j) || c != imgSrc.get(i + 1, j) &&
           c != imgSrc.get(i, j - 1) || c != imgSrc.get(i, j + 1))
       {
-        contourPoints.add(new PVector(i, j));
+        contourPoints.add(pv);
       }      
     }
   }
