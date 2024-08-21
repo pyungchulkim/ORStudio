@@ -748,6 +748,17 @@ void keyPressed()
           }
         }
       }
+      else if (key == 'r' || key == 'R') {  // replace a color by another.
+        // last two colors in the color palette are used to replace colors
+        color cFrom = colorPalette[colorPalette.length - 2];
+        color cTo = colorPalette[colorPalette.length - 1];
+        for (int x = 0; x < imgInput.width; x++) {
+          for (int y = 0; y < imgInput.height; y++) {
+            if (imgInput.get(x, y) == cFrom)
+              imgInput.set(x, y, cTo);
+          }
+        }
+     }
       
       // re-create imgWork and display
       imgWork = imgInput.copy();
