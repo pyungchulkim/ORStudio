@@ -213,7 +213,7 @@ String getMunsellHueCode(float x, float y)
 {
   // Obtain the angle in degree as [0, 360)
   float a = degrees(atan2(y, x));
-  a %= 360;
+  a = (int)a % 360;
   if (a < 0) a += 360;
 
   // Obtain hue code
@@ -226,7 +226,7 @@ float getMunsellHueNumber(float x, float y)
 {
   // Obtain the angle in degree as [0, 360)
   float a = degrees(atan2(y, x));
-  a %= 360;
+  a = (int)a % 360;
   if (a < 0) a += 360;
 
   // Obtain hue number

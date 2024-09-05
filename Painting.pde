@@ -652,7 +652,7 @@ class Painting
           }
         }
         // Move it inside the sphere: first value, then chroma
-        hueDegree %= 360;
+        hueDegree = (int)hueDegree % 360;
         if (hueDegree < 0) hueDegree += 360;
         value = max(2, min(18, value));
         chroma = max(2, min(colorTable.getMaxChroma(hueDegree, value), chroma));

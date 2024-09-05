@@ -727,6 +727,7 @@ void keyPressed()
   bShift = (key == CODED && keyCode == SHIFT);
 
   if (currPaintingIdx < 0) {  // no painting is done yet; but image src is there
+    cursor(WAIT);
     if (imgInput != null && imgWork != null) {
       // change the src input image directly
       if (key == 'b' || key == 'B') {  // blur the image by one step.
@@ -736,17 +737,8 @@ void keyPressed()
       else if (key == 'g' || key == 'G') {  // convert it to gray.
         imgInput.filter(GRAY);
       }
-      else if (key >= '1' && key <= '9') {  // convert it to gray of the given scale 
-        imgInput.filter(GRAY);
-        int scale = key - '0';
-        int size = 256 / scale;
-        for (int x = 0; x < imgInput.width; x++) {
-          for (int y = 0; y < imgInput.height; y++) {
-            // quantize it and set the color to its center
-            int rc = color((int)red(imgInput.get(x, y)) / size * size + size/2);
-            imgInput.set(x, y, rc);
-          }
-        }
+      else if (key >= '2' && key <= '9') {  // posterize - reduce color channel to the value of key 
+        imgInput.filter(POSTERIZE, key - '0');
       }
       else if (key == 'r' || key == 'R') {  // replace a color by another.
         // last two colors in the color palette are used to replace colors
@@ -768,6 +760,7 @@ void keyPressed()
         imgWork.resize(0, imgHeightMax);
       drawImage();
     }
+    cursor(ARROW);
     return;
   }
 
