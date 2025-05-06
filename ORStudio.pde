@@ -504,10 +504,7 @@ void doAction(int area)
         while (pathName == null) delay(200); // Wait until a Input dialog is done
         if (pathName.equals(""))  // Dialog is cancelled - do nothing
           break;
-        // Double the size and save it
-        PImage imgTmp = imgWork.copy();
-        imgTmp.resize(imgWork.width * 2, 0);
-        imgTmp.save(pathName);
+        imgWork.save(pathName);
         String fileName = pathName.substring(pathName.lastIndexOf("\\") + 1);
         drawTextBox("The image has been saved at " + fileName, msgX, msgY, msgWidth, msgHeight);
       }
