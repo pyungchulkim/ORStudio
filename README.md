@@ -18,3 +18,8 @@ Note that ORStudio is to serve my own art process. Though some concepts in ORStu
 
 ORStudio is written in Processing 4.3 with Java. No additional libraries need to be installed. 
 
+Pyungchul Kim, 2024
+
+http://orderedrandom.com
+
+
