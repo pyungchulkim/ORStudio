@@ -307,8 +307,8 @@ final color colorText = color(255,255,255);  // text color
 // Global variables
 ControlP5 cp5 = null;  // Control P5 for buttons, sliders, etc
 String pathName = null;  // file name from the dialog
-PImage imgInput = null;  // original input image
-PImage imgWork = null;  // image at work
+PImage imgInput = null;  // input image to generate patches
+PImage imgWork = null;  // image at work and used for display at screen
 color colorSelected = color(220,63,78);  // selected color. 5.0R-10-14 by default
 color[] colorPalette = { color(255), color(0), color(255,0,0), color(0,255,0), color(0,0,255), 
                          color(255,255,0), color(255,0,255), color(0,255,255), colorBG, colorBG }; // color palette
@@ -329,6 +329,8 @@ int currPatchIdx = -1;  // current patch being viewed and edited
 int undoPaintingIdx = -1;  // index of the painting saved for undo
 Stack<Painting> undoPaintings = null;  // paintings save for undo
 int maxUndoPaintings = 200;  // max # of undo operations
+int simplifyThreshold = 0; // current threshold for simplification 
+int simplifyThresholdIncr = 1;  // threshold increment for simplification
 boolean bPause = false;  // painting paused
 boolean bDrag = false;  // mouse being dragged
 boolean bShift = false;  // shift-key is pressed
@@ -419,6 +421,7 @@ void doAction(int area)
         resetUndoPainting();
         storedPainting = null;
         currPatchIdx = -1;
+        simplifyThreshold = 0;
       }
       break;
       
@@ -474,6 +477,7 @@ void doAction(int area)
         currPaintingIdx = 0;
         storedPainting = new Painting(p);  // set this one as stored as well
         currPatchIdx = -1;
+        simplifyThreshold = 0;
         resetUndoPainting();
         viewMode = areaViewColors;
         String fileName = pathName.substring(pathName.lastIndexOf("\\") + 1);
@@ -713,6 +717,106 @@ void doAction(int area)
   }
 }
 
+// Simplify the image with flood fill algorithm with the threshold.
+// The flooding starts from the pixels with highest Munsell distance from
+// the ambient color (i.e., the centroid).
+void simplify(PImage imgSrc, int threshold) 
+{
+  color cVisited = color(128);  // use gray to mark visited while traversal
+  color cDone = color(255);  // use white to mark done after an area is done
+  PImage imgMark = createImage(imgSrc.width, imgSrc.height, RGB);  // to mark done or visited
+
+  // Calculate the centroid color
+  float rt = 0;
+  float gt = 0;
+  float bt = 0;
+  for (int i = 0; i < imgSrc.width; i++) {
+    for (int j = 0; j < imgSrc.height; j++) {
+      color c = imgSrc.get(i, j);
+      rt += red(c);
+      gt += green(c);
+      bt += blue(c);
+    }
+  }
+  int nPixels = imgSrc.width * imgSrc.height;
+  MunsellColor mcCentroid = colorTable.rgbToMunsell(color(rt / nPixels, gt / nPixels, bt / nPixels));
+  
+  // Sort pixels in the descenting order of the Munsell distance to the centroid.
+  // Use PVector with x for pixel index, y for the Munsell distance.
+  PVector[] orderedPixels = new PVector[nPixels];
+  for (int i = 0; i < imgSrc.width; i++) {
+    for (int j = 0; j < imgSrc.height; j++) {
+      int idx = i * imgSrc.height + j;
+      MunsellColor mc = colorTable.rgbToMunsell(imgSrc.get(i, j));
+      orderedPixels[idx] = new PVector(idx, mcCentroid.getGap(mc));
+    }
+  }
+  Arrays.sort(orderedPixels, Comparator.comparing((PVector p) -> -p.y));
+
+  color s;  // alias to a pixel in imgSrc
+  color m;  // alias to a pixel in imgMark
+  for (PVector opv : orderedPixels) {
+
+    // Obtain the pixel coord from the index (x in vector)
+    int ox = (int)(opv.x / imgSrc.height);
+    int oy = (int)(opv.x % imgSrc.height);
+    
+    m = imgMark.get(ox, oy);
+    if (m == cDone)
+      continue;  // done in previous patch
+
+    s = imgSrc.get(ox, oy);
+    
+    // Identify a new area using floodfill algorithm.
+    ArrayList<PVector> points = new ArrayList<PVector>();
+    MunsellColor mcCenter = colorTable.rgbToMunsell(s);
+    Stack<PVector> ps = new Stack<PVector>();
+    ps.push(new PVector(ox, oy));      
+    while (!ps.empty()) {
+      PVector pv = ps.pop();
+      int px = (int)pv.x;
+      int py = (int)pv.y;
+      
+      m = imgMark.get(px, py);
+      if (m == cVisited || m == cDone)
+        continue;  // Already visited this pixel.
+
+      s = imgSrc.get(px, py);
+      if (colorTable.rgbToMunsell(s).getGap(mcCenter) >= threshold)
+        continue;  // Outside boundary
+        
+      // Has reached a new pixel; update average color and mark it visited
+      points.add(pv);
+      imgMark.set(px, py, cVisited);
+
+      // Explore neighbors
+      if (px > 0)
+          ps.push(new PVector(px - 1, py));
+      if (px < imgSrc.width - 1)
+          ps.push(new PVector(px + 1, py));
+      if (py > 0)
+          ps.push(new PVector(px, py - 1));
+      if (py < imgSrc.height - 1)
+          ps.push(new PVector(px, py + 1));     
+    }
+    // Done the area: mark done and paint them with the average color
+    rt = 0;
+    gt = 0;
+    bt = 0;
+    for (PVector p : points) {
+      color c = imgSrc.get((int)p.x, (int)p.y);
+      rt += red(c);
+      gt += green(c);
+      bt += blue(c);
+    }
+    color cAvg = color(rt / points.size(), gt / points.size(), bt / points.size());
+    for (PVector p : points) {
+      imgMark.set((int)p.x, (int)p.y, cDone);
+      imgSrc.set((int)p.x, (int)p.y, cAvg);
+    }
+  }
+}
+
 // Keyboard event handlers
 void keyPressed() 
 {
@@ -727,7 +831,11 @@ void keyPressed()
     cursor(WAIT);
     if (imgInput != null && imgWork != null) {
       // change the src input image directly
-      if (key == 'b' || key == 'B') {  // blur the image by one step.
+      if (key == 'f' || key == 'F') {  // flood fill the image by one step.
+        simplifyThreshold += simplifyThresholdIncr;
+        simplify(imgInput, simplifyThreshold);
+      }
+      else if (key == 'b' || key == 'B') {  // blur the image by one step.
         imgInput.resize(imgInput.width / 2, 0);
         imgInput.resize(imgInput.width * 2, 0);
       }
