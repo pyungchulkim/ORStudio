@@ -650,12 +650,13 @@ class Painting
             case 'A':  gap = r[1]; break;
             default:   break;
           }
+          // Move it inside the sphere: first value, then chroma
+          hueDegree = (int)hueDegree % 360;
+          if (hueDegree < 0) hueDegree += 360;
+          value = max(2, min(18, value));
+          chroma = max(2, min(colorTable.getMaxChroma(hueDegree, value), chroma));
         }
-        // Move it inside the sphere: first value, then chroma
-        hueDegree = (int)hueDegree % 360;
-        if (hueDegree < 0) hueDegree += 360;
-        value = max(2, min(18, value));
-        chroma = max(2, min(colorTable.getMaxChroma(hueDegree, value), chroma));
+        
         float r = radians(hueDegree);
         MunsellColor mc = new MunsellColor(chroma * cos(r), chroma * sin(r), value);
       
@@ -724,15 +725,16 @@ class Painting
             case 'A':  break;
             default:   break;
           }
+          // Move it inside the sphere: first value, then chroma
+          hueDegree %= 360;
+          if (hueDegree < 0) hueDegree += 360;
+          value = max(2, min(18, value));
+          int cMax = colorTable.getMaxChroma(hueDegree, value);
+          if (cMax == 0)  // adjust value to have a non-gray color
+            value += (value < 10) ? 2 : -2;
+          chroma = max(2, min(cMax, chroma));
         }
-        // Move it inside the sphere: first value, then chroma
-        hueDegree %= 360;
-        if (hueDegree < 0) hueDegree += 360;
-        value = max(2, min(18, value));
-        int cMax = colorTable.getMaxChroma(hueDegree, value);
-        if (cMax == 0)  // adjust value to have a non-gray color
-          value += (value < 10) ? 2 : -2;
-        chroma = max(2, min(cMax, chroma));
+        
         float r = radians(hueDegree);
         p.setColor(new MunsellColor(chroma * cos(r), chroma * sin(r), value));
 

@@ -215,7 +215,7 @@ class ColorPatch
   //  "V<delta>" - Move value by delta.
   //  "A<delta>" - Move by delta distance in any direction. This rule can appear
   //               at the end; no rule can be added after this.
-  //  "O"        - Move to the opposite. Equivalent to "H20".
+  //  "O"        - Move to the opposite crossing the center of color sphere.
   public void parseTransParams()
   {
     if (transParsed)
