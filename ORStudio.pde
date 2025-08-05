@@ -831,7 +831,7 @@ void keyPressed()
     cursor(WAIT);
     if (imgInput != null && imgWork != null) {
       // change the src input image directly
-      if (key == 'f' || key == 'F') {  // flood fill the image by one step.
+      if (key == 's' || key == 'S') {  // simplify the image by one step.
         simplifyThreshold += simplifyThresholdIncr;
         simplify(imgInput, simplifyThreshold);
       }

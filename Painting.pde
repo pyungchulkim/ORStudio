@@ -274,7 +274,6 @@ class Painting
       }
     }
     
-    
     return histogram;
   }
 
@@ -444,6 +443,14 @@ class Painting
             if (p.masterGray == mc1.value)
               p.masterGray = mc2.value;
           }
+        }
+        break;
+        
+      case 's':  // simplify the number of colors used by 10% or -1
+      case 'S':
+        if (what == areaViewColors) {
+          simplifyColors();
+          bUpdateStats = true;
         }
         break;
         
@@ -938,6 +945,48 @@ class Painting
     pg.endDraw();
     pg.save(pathName);
   }
+  
+  // Simplify colors by reducing the number of colors used by 10% or 1.
+  // Reducing colors are done by replacing the color that uses less area by
+  // the nearest color that uses more area.
+  void simplifyColors()
+  {
+    float gap = 0.1;
+    
+    // Obtain a histogram of all distinct colors
+    HashMap<MunsellColor, Float> histogram = buildHistogram(gap);
+    
+    // Sort them by area
+    List<Map.Entry<MunsellColor, Float> > list = new LinkedList<Map.Entry<MunsellColor, Float> >(histogram.entrySet());
+    Collections.sort(list, Comparator.comparing((Map.Entry<MunsellColor, Float> e) -> -e.getValue()));
+
+    // Calculate the new max # of colors
+    int maxColors = max(1, list.size() - max(round(list.size() * 0.1), 1));
+    
+    // Simplify colors so they are limited to maxColors
+    for (ColorPatch p : patches) {
+      boolean bFound = false;
+      for (int i = 0; i < maxColors && i < list.size(); i++) {
+        if (p.mColor.getGap(list.get(i).getKey()) <= gap) {
+          bFound = true;  // not a victim - no need to replace
+          break;
+        }
+      }
+      if (!bFound) {  // replace with the nearest color
+        float minGap = 100.0;
+        int m = -1;
+        for (int j = 0; j < maxColors && j < list.size(); j++) {
+          float g = p.mColor.getGap(list.get(j).getKey());
+          if (g < minGap) {
+            m = j;
+            minGap = g;
+          }
+        }
+        if (m >= 0)
+          p.setColor(list.get(m).getKey());
+      }
+    }
+  }  
 }
 
 // Build a set of color patches from the image.
