@@ -96,7 +96,15 @@ public class ColorTable
       maxChroma = maxChromaTable[hi][vi];
     return maxChroma;
   }
-
+  public int getMaxChroma(float hd)
+  {
+    int maxChroma = 0;
+    for (int v = 0; v <= 20; v++) {
+      maxChroma = max(maxChroma, getMaxChroma(hd, v));
+    }
+    return maxChroma;
+  }
+  
   // Load the conversion tables from CSV files to hash maps
   @SuppressWarnings("resource")
 	public void loadTable()	

@@ -358,11 +358,11 @@ class Painting
             p.masterTension = min(40, p.masterTension);  // cap it within [0.1, 40]
             p.masterTension = max(0.1, p.masterTension);
           }
-        }        
+        }
         break;
         
-      case '>':  // shift up gray or tension by 1.0
-      case '<':  // shift down gray or tension by 1.0
+      case '>':  // shift up gray or tension by 1.0 or chroma by 2.0
+      case '<':  // shift down gray or tension by 1.0 or chroma by 2.0
         dir = (how == '>') ? 1 : -1;
         if (what == areaViewMGray) {
           for (ColorPatch p : patches) {
@@ -380,10 +380,31 @@ class Painting
             p.masterTension = max(0.1, p.masterTension);
           }
         }        
+        if (what == areaViewMHue) {
+          dir *= 2;
+          for (ColorPatch p : patches) {
+            if (p.masterChroma <= 0) continue;
+            p.masterChroma += dir;
+            // cap it within max chroma
+            p.masterChroma = max(2, min(colorTable.getMaxChroma(p.masterHue), p.masterChroma));
+          }
+        }
+        if (what == areaViewColors) {
+          dir *= 2;
+          for (ColorPatch p : patches) {
+            if (p.mColor.isGray()) continue;
+            MunsellColor mc = new MunsellColor(p.mColor);
+            mc.chroma += dir;
+            // cap it within max chroma of the value
+            mc.chroma = max(2, min(colorTable.getMaxChroma(mc.hueDegree, mc.value), mc.chroma));
+            p.setColor(mc);
+          }
+          bUpdateStats = true;
+        }
         break;
 
-      case 'c':  // clear (reset) color, gray, hue or tension
       case 'C':
+      case 'c':  // clear (reset) color, gray, hue or tension
         if (what == areaViewColors) {
           for (ColorPatch p : patches) 
             p.setColor(munsellBlack);
@@ -406,8 +427,8 @@ class Painting
         }
         break;
         
-      case 'g':  // change the colors to gray
       case 'G':
+      case 'g':  // change the colors to gray
         if (what == areaViewColors) {
           for (ColorPatch p : patches) 
             p.setColor(new MunsellColor(0, 0, p.mColor.value));
@@ -415,8 +436,8 @@ class Painting
         }
         break;
         
-      case 'r':  // replace master hue or color from mc1 to mc2
       case 'R':
+      case 'r':  // replace master hue or color from mc1 to mc2
         if (what == areaViewColors && mc1 != null && mc2 != null) {
           for (ColorPatch p : patches) {
             if (mc1.getGap(p.mColor) < similarColorGap) {
@@ -446,10 +467,34 @@ class Painting
         }
         break;
         
-      case 's':  // simplify the number of colors used by 10% or -1
       case 'S':
+      case 's':  // simplify the number of colors used by 10% or -1
         if (what == areaViewColors) {
           simplifyColors();
+          bUpdateStats = true;
+        }
+        break;
+        
+      case 'H':
+      case 'h':  // increase hue by hueDegreePerSector.
+                 // Note that it may lose high chroma as hue changes
+        if (what == areaViewMHue) {
+          for (ColorPatch p : patches) {
+            if (p.masterChroma <= 0) continue;
+            p.masterHue = (p.masterHue + hueDegreePerSector) % 360;
+            // cap the chroma within max chroma of the new hue
+            p.masterChroma = max(2, min(colorTable.getMaxChroma(p.masterHue), p.masterChroma));
+          }
+        }
+        if (what == areaViewColors) {
+          for (ColorPatch p : patches) {
+            if (p.mColor.isGray()) continue;
+            float r = radians((p.mColor.hueDegree + hueDegreePerSector) % 360);
+            MunsellColor mc = new MunsellColor(p.mColor.chroma * cos(r), p.mColor.chroma * sin(r), p.mColor.value);
+            // cap the chroma within max chroma of the new hue
+            mc.chroma = max(2, min(colorTable.getMaxChroma(mc.hueDegree, mc.value), mc.chroma));
+            p.setColor(mc);
+          }
           bUpdateStats = true;
         }
         break;
