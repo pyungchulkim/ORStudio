@@ -1352,7 +1352,7 @@ void drawControls()
   
     y += ctrlHeight + 10;
     drawTextBox("Hue Var.", x, y, labelW, ctrlHeight);
-    cp5.addSlider("ctrlHueVariance").setValue(ctrlHueVariance).setRange(1, 90)
+    cp5.addSlider("ctrlHueVariance").setValue(ctrlHueVariance).setRange(1, 180)
           .setLabel("").setPosition(x + labelW, y).setSize(ctrlW, ctrlHeight);
       
     y += ctrlHeight + 10;

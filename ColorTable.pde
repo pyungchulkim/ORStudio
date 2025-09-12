@@ -154,7 +154,8 @@ public class ColorTable
   			float value = Float.parseFloat(data[5]) * 2;
         float chroma = Float.parseFloat(data[6]);
   			MunsellColor mc = new MunsellColor(hueCode, hueNumber, value, chroma);
-   			rgbToM.put(c, mc);
+   			if (!rgbToM.containsKey(c))  // do not overwrite a reverse lookup if exists
+          rgbToM.put(c, mc);
   		}  
 
   		fileMToRGB.close();

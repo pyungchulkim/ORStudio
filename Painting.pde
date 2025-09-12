@@ -1130,8 +1130,8 @@ Painting buildPatchesFromContour(PImage imgSrc, color cBase, color cContour, PIm
 Painting buildPatchesFromSolid(PImage imgSrc, color cSkip, PImage imgScaleTo) 
 {
   ArrayList<ColorPatch> patches = new ArrayList<ColorPatch>();
-  HashMap<Integer, ArrayList<PVector> > mapPoints = new HashMap<Integer, ArrayList<PVector> >();
-  HashMap<Integer, ArrayList<PVector> > mapContourPoints = new HashMap<Integer, ArrayList<PVector> >();
+  HashMap<MunsellColor, ArrayList<PVector> > mapPoints = new HashMap<MunsellColor, ArrayList<PVector> >();
+  HashMap<MunsellColor, ArrayList<PVector> > mapContourPoints = new HashMap<MunsellColor, ArrayList<PVector> >();
 
   for (int i = 0; i < imgSrc.width; i++) {
     for (int j = 0; j < imgSrc.height; j++) {
@@ -1140,14 +1140,15 @@ Painting buildPatchesFromSolid(PImage imgSrc, color cSkip, PImage imgScaleTo)
         continue;  // skip this color
         
       // See if the color is already in the map
-      ArrayList<PVector> points = mapPoints.get(c);
-      ArrayList<PVector> contourPoints = mapContourPoints.get(c);
+      MunsellColor m = colorTable.rgbToMunsell(c);
+      ArrayList<PVector> points = mapPoints.get(m);
+      ArrayList<PVector> contourPoints = mapContourPoints.get(m);
       if (points == null) {
         // a new color: create a new points vector and put it to the map
         points = new ArrayList<PVector>();
-        mapPoints.put(c, points);
+        mapPoints.put(m, points);
         contourPoints = new ArrayList<PVector>();
-        mapContourPoints.put(c, contourPoints);
+        mapContourPoints.put(m, contourPoints);
       }
       assert contourPoints != null : "points and contourPoints are not in sync";
 
@@ -1164,7 +1165,7 @@ Painting buildPatchesFromSolid(PImage imgSrc, color cSkip, PImage imgScaleTo)
   }
     
   // Create all patches from the map
-  for (Map.Entry<Integer, ArrayList<PVector> > m : mapPoints.entrySet()) {
+  for (Map.Entry<MunsellColor, ArrayList<PVector> > m : mapPoints.entrySet()) {
     ArrayList<PVector> points = m.getValue();
     ArrayList<PVector> contourPoints = mapContourPoints.get(m.getKey());
     if ((points.size() - contourPoints.size()) > 0) {
