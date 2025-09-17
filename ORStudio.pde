@@ -92,7 +92,7 @@
 // - Select the contour color by clicking a contour line from the loaded image or
 //   by choosing one from the populated palette. 
 //   Make sure the right contour color displayed in the selected color rectangle.
-//   Select "BUILD C" button to build patches. The image area will change to
+//   Select "BUILD CTR" button to build patches. The image area will change to
 //   show patches; each patch has a single color. Also, color plots and patches 
 //   summary statistics will be displayed. Rotate up/down, right/left the color plots
 //   to see colors being used in the patches. Also, get familiarized with
@@ -102,9 +102,9 @@
 //   which is copied from the loaded image by default. You can change it a different
 //   gray level by right-clicking the patch. The new gray level is picked up from the
 //   current selected color (big rectangle).
-// - Select "M-HUE" button and see the master specification for hue,
+// - Select "M-HUE-C" button and see the master specification for hue/chroma,
 //   which is set from the loaded image by default. You can change it a different
-//   hue by right-clicking the patch. The new hue is picked up from the
+//   hue/chroma by right-clicking the patch. The new hue/chroma is picked up from the
 //   current selected color (big rectangle).
 // - Select "M-TENSION" button and see the master specification for tension. 
 //   Blue indicates lowest tension while red the highest. 
@@ -121,13 +121,13 @@
 //   make the chord to include all colors.
 // - Notice "Paintings", "Centroid", "Hue Var." at the control bar.
 //   You can change them, but no need for the demonstration.
-// - Select "COLORS" button above the image, and select "PAINT" button. Notice that
-//   paintings are generated with the criteria selected. It actually generates
+// - Select "COLORS" button above the image, and select "PAINT" button lower left of screen. 
+//   Notice that paintings are generated with the criteria selected. It actually generates
 //   100 paintings by default and show the first painting for each iteration.
 // - Select "PAUSE" button to pause the continuous painting. And press "PREV" or
 //   "NEXT" to browse other paintings out of the 100 paintings.
-// - They are all within the same guidance criteria (master tension, gray, hue, 
-//   centroid, complexity).
+// - They are all within the same guidance criteria (master tension, gray, hue/chroma, 
+//   transition, centroid, complexity, etc).
 // - Select "RESUME" to resume the painting process. While new paintings are generated,
 //   adjust "Complexity" slider left or right and notice the range (variety) of colors
 //   being painted.
@@ -138,28 +138,33 @@
 // - Select "OPEN" button and choose the ORStudio file saved in the previous step.
 // - You should be able to continue the experimentation from the saved studio session.
 // - Try other buttons and keys to try:
-//   - "BUILD S" is to build patches based on solid colors. Unlike "BUILD C", a solid
-//     with a distinct color will form a patch, rather than based upon contours.
-//   - "BUILD SC" is to build patches based on solid colors except the area with
-//     the selected color. Then, the selected color area will be broken to patches
-//     using contour as boundary.
+//   - "BUILD SLD" is to build patches based on solid by boundaries. 
+//     Unlike "BUILD CTR", it does not assume an explicit contour color. Instead,
+//     it identifies a patch when a solid is bounded by any different color.
+//   - "BUILD CLR" is to build patches based on distint colors. Any area with the
+//     same color forms the same patch. Because of this, a patch may contains
+//     more than one disconnected areas of the image as long as they have the same color.
 //   - "SAVE IMG" is to save the current viewing image into a PNG file.
 //   - "SAVE PLT" is to save color palette of the current painting as an image file.
 //   - "STORE" is to store the current state of the current painting (master and painted colors).
 //   - "RESTORE" is to restore the last stored painting.
 //   - "THEME" is to quickly preview all colors in the set of color chords
-//   - While viewing the source image or the master (M-GRAY, M-HUE, M-TENSION), 
-//     the following key can be used to edit the master specification:
+//   - While viewing the source image or the master specification, 
+//     many keys are used as a command for a certain functionality.
+//     Some examples are as follows:
 //      - 'p' or 'P': master picks up the specs from the current painting;
-//      - 'c' or 'C': master gets reset;
-//      - '+' or '-': scale up or down the master specs (gray or tension only)
-//      - '>' or '<': shift up or down the master specs (gray or tension only)
-//      - 'r' or 'R': replace a hue using the last two colors in the color palette
+//      - 'c' or 'C': clear the specification;
+//      - '+' or '-': scale up or down the master specs (e.g., gray, tension)
+//      - '>' or '<': shift up or down the master specs (e.g., gray, tension, hue/chroma)
+//      - 'r' or 'R': replace the content from/to using the last two colors in the color palette
+//      - 'm' or 'M': merge patches
+//      - 'b' or 'B': break patches
 //      - 'control-z': under the last change
-//     Note that these may not reflect recent changes. A good place to see key
-//     and mouse mappings is doAction() and keyPressed() in the code.
+//      - many others
+//     Note that these do not reflect recent changes. A good place to see all key
+//     and mouse mappings is doAction() and keyPressed(), and Painting::update() in the code.
 //
-// by Pyungchul Kim, 2024
+// by Pyungchul Kim, 2025
 // http://orderedrandom.com
 //
 
@@ -210,13 +215,13 @@ final int plotSize = 300;
 
 // Patch info box
 final int infoX = vcX + vcWidth + 20;
-final int infoY = plotY + plotSize + 70;
+final int infoY = plotY + plotSize + 40;
 final int infoWidth = plotSize;
 final int infoHeight = 100;
 
 // Color chord controls and colors
 final int chordX = btnMasterX;
-final int chordY = hY + hRadius + 150;
+final int chordY = hY + hRadius + 120;
 final int chordCellWidth = 50;
 final int chordCellHeight = 30;
 final int chordColorX = chordX + chordCellWidth * 4 + 40;
@@ -267,9 +272,9 @@ final int areaPlot = 4;
 
 // Studio menu
 final int areaLoad = 10;
-final int areaBuildC = 11;
-final int areaBuildS = 12;
-final int areaBuildSC = 13;
+final int areaBuildCTR = 11;
+final int areaBuildSLD = 12;
+final int areaBuildCLR = 13;
 final int areaOpen = 14;
 final int areaSave = 15;
 final int areaSaveImg = 16;
@@ -288,11 +293,12 @@ final int areaNext = 37;
 
 // Patches view menu
 final int areaViewColors = 40;
-final int areaViewTension = 41;
-final int areaViewMGray = 42;
-final int areaViewMHue = 43;
-final int areaViewMTension = 44;
-final int areaViewMTransition = 45;
+final int areaViewTexture = 41;
+final int areaViewTension = 42;
+final int areaViewMGray = 43;
+final int areaViewMHue = 44;
+final int areaViewMTension = 45;
+final int areaViewMTransition = 46;
 
 final int areaChord = 50;
 final int areaChordColor = 51;
@@ -303,6 +309,7 @@ final int areaImage = 100;
 final color colorBG = color(0,0,0);  // background color
 final color colorEdge = color(255,255,255);  // edge color
 final color colorText = color(255,255,255);  // text color
+final color colorNone = 0;  // use it as not-specified (fully transparent black)
 
 // Global variables
 ControlP5 cp5 = null;  // Control P5 for buttons, sliders, etc
@@ -342,6 +349,7 @@ MunsellColor ctrlCentroid = null;  // centroid color for painting
 float ctrlHueVariance = 20;  // hue range from master hue
 float ctrlTensionScale = 1.0;  // scale to adjust master tension
 float[] ctrlComplexity = {2, 2.5};  // complexity target
+int ctrlTextureType = 1;  // texture to be used
 
 void setup() 
 {
@@ -380,8 +388,8 @@ void doAction(int area)
   drawTextBox("", msgX, msgY, msgWidth, msgHeight);  // erase the previous status msg
   
   // Any button to use image area will pause painting
-  if (area == areaLoad    || area == areaBuildC  || 
-      area == areaBuildS  || area == areaBuildSC ||
+  if (area == areaLoad    || area == areaBuildCTR  || 
+      area == areaBuildSLD  || area == areaBuildCLR ||
       area == areaOpen    || area == areaSave    ||
       area == areaSaveImg || area == areaSavePlt ||
       area == areaStore   || area == areaRestore ||
@@ -425,19 +433,19 @@ void doAction(int area)
       }
       break;
       
-    case areaBuildC:  // Build the color patches
-    case areaBuildS:
-    case areaBuildSC:
+    case areaBuildCTR:  // Build the color patches
+    case areaBuildSLD:
+    case areaBuildCLR:
       if (mouseButton == LEFT && imgInput != null && imgWork != null) {
         // Build color patches from original image to avoid any loss in contour pixels.
         cursor(WAIT);
         Painting p;
-        if (area == areaBuildC)
-          p = buildPatchesFromContour(imgInput, 0, colorSelected, imgWork);
-        else if (area == areaBuildS)
-          p = buildPatchesFromSolid(imgInput, 0, imgWork);
+        if (area == areaBuildCTR)
+          p = buildPatchesByBoundary(imgInput, colorSelected, imgWork);
+        else if (area == areaBuildSLD)
+          p = buildPatchesByBoundary(imgInput, colorNone, imgWork);
         else
-          p = buildPatchesFromSolidContour(imgInput, colorSelected, imgWork);
+          p = buildPatchesByColor(imgInput, imgWork);
         cursor(ARROW);
         imgInput = null;  // do not build it from again
        
@@ -649,6 +657,7 @@ void doAction(int area)
       break;
       
     case areaViewColors:  // Draw painted colors of the patches
+    case areaViewTexture:  // Draw texture of the patches
     case areaViewTension:  // Draw tension map of the patches
     case areaViewMGray:  // Draw master gray
     case areaViewMHue:  // Draw master hue
@@ -1109,11 +1118,11 @@ void drawButtons()
   // Buttons for Master patches
   cp5.addButton("btnLoad").setLabel("LOAD").setValue(areaLoad)
      .setPosition(btnMasterX, btnMasterY + (btnHeight + 10) * 0).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnBuildC").setLabel("BUILD C").setValue(areaBuildC)
+  cp5.addButton("btnBuildCTR").setLabel("BUILD CTR").setValue(areaBuildCTR)
      .setPosition(btnMasterX, btnMasterY + (btnHeight + 10) * 1).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnBuildS").setLabel("BUILD S").setValue(areaBuildS)
+  cp5.addButton("btnBuildSLD").setLabel("BUILD SLD").setValue(areaBuildSLD)
      .setPosition(btnMasterX, btnMasterY + (btnHeight + 10) * 2).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnBuildSC").setLabel("BUILD SC").setValue(areaBuildSC)
+  cp5.addButton("btnBuildCLR").setLabel("BUILD CLR").setValue(areaBuildCLR)
      .setPosition(btnMasterX, btnMasterY + (btnHeight + 10) * 3).setSize(btnWidth, btnHeight);
   cp5.addButton("btnOpen").setLabel("OPEN").setValue(areaOpen)
      .setPosition(btnMasterX, btnMasterY + (btnHeight + 10) * 4).setSize(btnWidth, btnHeight);
@@ -1134,38 +1143,40 @@ void drawButtons()
      
   // Buttons for painting operations
   cp5.addButton("btnPaint").setLabel("PAINT").setValue(areaPaint)
-     .setPosition(btnMasterX + (btnWidth + 10) * 0, ctrlY + 160).setSize(btnWidth, btnHeight);
+     .setPosition(btnMasterX + (btnWidth + 10) * 0, ctrlY + 190).setSize(btnWidth, btnHeight);
   cp5.addButton("btnPause").setLabel("PAUSE").setValue(areaPause)
-     .setPosition(btnMasterX + (btnWidth + 10) * 1, ctrlY + 160).setSize(btnWidth, btnHeight);
+     .setPosition(btnMasterX + (btnWidth + 10) * 1, ctrlY + 190).setSize(btnWidth, btnHeight);
   cp5.addButton("btnResume").setLabel("RESUME").setValue(areaResume)
-     .setPosition(btnMasterX + (btnWidth + 10) * 2, ctrlY + 160).setSize(btnWidth, btnHeight);
+     .setPosition(btnMasterX + (btnWidth + 10) * 2, ctrlY + 190).setSize(btnWidth, btnHeight);
   cp5.addButton("btnReset").setLabel("RESET").setValue(areaReset)
-     .setPosition(btnMasterX + (btnWidth + 10) * 3, ctrlY + 160).setSize(btnWidth, btnHeight);
+     .setPosition(btnMasterX + (btnWidth + 10) * 3, ctrlY + 190).setSize(btnWidth, btnHeight);
   cp5.addButton("btnPrev").setLabel("PREV").setValue(areaPrev)
-     .setPosition(btnMasterX + (btnWidth + 10) * 4, ctrlY + 160).setSize(btnWidth, btnHeight);
+     .setPosition(btnMasterX + (btnWidth + 10) * 4, ctrlY + 190).setSize(btnWidth, btnHeight);
   cp5.addButton("btnNext").setLabel("NEXT").setValue(areaNext)
-     .setPosition(btnMasterX + (btnWidth + 10) * 5, ctrlY + 160).setSize(btnWidth, btnHeight);
+     .setPosition(btnMasterX + (btnWidth + 10) * 5, ctrlY + 190).setSize(btnWidth, btnHeight);
 
   // Buttons for View patches
   cp5.addButton("btnViewColors").setLabel("COLORS").setValue(areaViewColors)
      .setPosition(btnViewX + (btnWidth + 20) * 0, btnViewY).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnViewTension").setLabel("TENSION").setValue(areaViewTension)
+  cp5.addButton("btnViewTexture").setLabel("TEXTURE").setValue(areaViewTexture)
      .setPosition(btnViewX + (btnWidth + 20) * 1, btnViewY).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnViewMGray").setLabel("M-GRAY").setValue(areaViewMGray)
+  cp5.addButton("btnViewTension").setLabel("TENSION").setValue(areaViewTension)
      .setPosition(btnViewX + (btnWidth + 20) * 2, btnViewY).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnViewMHue").setLabel("M-HUE-C").setValue(areaViewMHue)
+  cp5.addButton("btnViewMGray").setLabel("M-GRAY").setValue(areaViewMGray)
      .setPosition(btnViewX + (btnWidth + 20) * 3, btnViewY).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnViewMTension").setLabel("M-TENSION").setValue(areaViewMTension)
+  cp5.addButton("btnViewMHue").setLabel("M-HUE-C").setValue(areaViewMHue)
      .setPosition(btnViewX + (btnWidth + 20) * 4, btnViewY).setSize(btnWidth, btnHeight);
-  cp5.addButton("btnViewMTransition").setLabel("M-TRANSIT").setValue(areaViewMTransition)
+  cp5.addButton("btnViewMTension").setLabel("M-TENSION").setValue(areaViewMTension)
      .setPosition(btnViewX + (btnWidth + 20) * 5, btnViewY).setSize(btnWidth, btnHeight);
+  cp5.addButton("btnViewMTransition").setLabel("M-TRANSIT").setValue(areaViewMTransition)
+     .setPosition(btnViewX + (btnWidth + 20) * 6, btnViewY).setSize(btnWidth, btnHeight);
 }
 
 // Process button events
 void btnLoad(int area) { doAction(area); }
-void btnBuildC(int area) { doAction(area); }
-void btnBuildS(int area) { doAction(area); }
-void btnBuildSC(int area) { doAction(area); }
+void btnBuildCTR(int area) { doAction(area); }
+void btnBuildSLD(int area) { doAction(area); }
+void btnBuildCLR(int area) { doAction(area); }
 void btnOpen(int area) { doAction(area); }
 void btnSave(int area) { doAction(area); }
 void btnSaveImg(int area) { doAction(area); }
@@ -1180,6 +1191,7 @@ void btnReset(int area) { doAction(area); }
 void btnPrev(int area) { doAction(area); }
 void btnNext(int area) { doAction(area); }
 void btnViewColors(int area) { doAction(area); }
+void btnViewTexture(int area) { doAction(area); }
 void btnViewTension(int area) { doAction(area); }
 void btnViewMGray(int area) { doAction(area); }
 void btnViewMHue(int area) { doAction(area); }
@@ -1365,6 +1377,11 @@ void drawControls()
     cp5.addRange("ctrlComplexity").setBroadcast(false).setLabel("")
                .setPosition(x + labelW, y).setSize(ctrlW, ctrlHeight).setHandleSize(10)
                .setRange(0, 6).setRangeValues(ctrlComplexity[0], ctrlComplexity[1]).setBroadcast(true);
+               
+    y += ctrlHeight + 10;
+    drawTextBox("Texture", x, y, labelW, ctrlHeight);
+    cp5.addSlider("ctrlTextureType").setValue(ctrlTextureType).setRange(1, 10)
+          .setLabel("").setPosition(x + labelW, y).setSize(ctrlW, ctrlHeight);
   }
   else {
     // Update control values
@@ -1375,6 +1392,7 @@ void drawControls()
     cp5.getController("ctrlHueVariance").setValue(ctrlHueVariance);
     cp5.getController("ctrlTensionScale").setValue(ctrlTensionScale);
     ((Range)cp5.getController("ctrlComplexity")).setRangeValues(ctrlComplexity[0], ctrlComplexity[1]);
+    cp5.getController("ctrlTextureType").setValue(ctrlTextureType);
   }
 }
 
@@ -1397,6 +1415,7 @@ void ctrlComplexity(ControlEvent v) {
   ctrlComplexity[0] = (float)(v.getController().getArrayValue(0));
   ctrlComplexity[1] = (float)(v.getController().getArrayValue(1));
 }
+void ctrlTextureType(int v) { ctrlTextureType = v; }
 
 // Draw text box
 void drawTextBox(String text, int x, int y, int w, int h)

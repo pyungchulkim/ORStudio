@@ -104,7 +104,21 @@ public class ColorTable
     }
     return maxChroma;
   }
-  
+  public int getMinValue(float hd, float c)
+  {
+    int minValue = 0;
+    while (minValue < 20 && getMaxChroma(hd, minValue) < c)
+      minValue += 2;
+    return minValue;
+  }
+  public int getMaxValue(float hd, float c)
+  {
+    int maxValue = 20;
+    while (maxValue > 0 && getMaxChroma(hd, maxValue) < c)
+      maxValue -= 2;
+    return maxValue;
+  }
+
   // Load the conversion tables from CSV files to hash maps
   @SuppressWarnings("resource")
 	public void loadTable()	

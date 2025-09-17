@@ -168,8 +168,8 @@ class Painting
     centroid = null;
     float areaSum = 0;
     for (ColorPatch p : patches) {
-      centroid = (centroid == null) ? p.mColor : centroid.getMixture(p.mColor, p.getSize() / areaSum);
-      areaSum += p.getSize();
+      centroid = (centroid == null) ? p.mColor : centroid.getMixture(p.mColor, p.getAreaSize() / areaSum);
+      areaSum += p.getAreaSize();
     }
   }
 
@@ -207,9 +207,9 @@ class Painting
     float sum, ssum, area;
     sum = ssum = area = 0;
     for (ColorPatch p : patches) {
-      sum += p.cGap * p.getSize();
-      ssum += p.cGap * p.cGap * p.getSize();
-      area += p.getSize();
+      sum += p.cGap * p.getAreaSize();
+      ssum += p.cGap * p.cGap * p.getAreaSize();
+      area += p.getAreaSize();
     }
     tension = ssum / area;
     
@@ -267,10 +267,10 @@ class Painting
         }
       }
       if (mc != null && cnt != null) {  // Similar one is found; add the count.
-        histogram.put(mc, cnt + p.getSize());
+        histogram.put(mc, cnt + p.getAreaSize());
       }
       else {  // No similar color is found; create a new entry
-        histogram.put(p.mColor, p.getSize());
+        histogram.put(p.mColor, p.getAreaSize());
       }
     }
     
@@ -287,9 +287,9 @@ class Painting
     float areaTotal, areaNotPainted;
     areaTotal = areaNotPainted = 0;
     for (ColorPatch p : patches) {
-      areaTotal += p.getSize();
+      areaTotal += p.getAreaSize();
       if (p.mColor.isGray())
-        areaNotPainted += p.getSize();
+        areaNotPainted += p.getAreaSize();
     }
     coverage = 1 - areaNotPainted / areaTotal;
   }
@@ -436,11 +436,11 @@ class Painting
         }
         break;
         
-      case 'R':
-      case 'r':  // replace master hue or color from mc1 to mc2
+      case 'R':  // replace master hue or color from mc1 to mc2.
+      case 'r':  // or refresh in case of viewTexture
         if (what == areaViewColors && mc1 != null && mc2 != null) {
           for (ColorPatch p : patches) {
-            if (mc1.getGap(p.mColor) < similarColorGap) {
+            if (mc1.isEqual(p.mColor)) {
               p.setColor(mc2);
               bUpdateStats = true;
             }
@@ -450,8 +450,8 @@ class Painting
           for (ColorPatch p : patches) {
             if (mc1.isGray() && p.masterHue < 0 ||
                 !mc1.isGray() && p.masterHue >= 0 &&
-                degreeDistance(mc1.hueDegree, p.masterHue) < similarHueGap &&
-                abs(mc1.chroma - p.masterChroma) < similarChromaGap)
+                mc1.hueDegree == p.masterHue &&
+                mc1.chroma == p.masterChroma)
             {
               p.masterHue = mc2.isGray() ? -1 : mc2.hueDegree;
               p.masterChroma = mc2.isGray() ? -1 : mc2.chroma;
@@ -463,6 +463,11 @@ class Painting
             if (p.masterGray == 0) continue;
             if (p.masterGray == mc1.value)
               p.masterGray = mc2.value;
+          }
+        }
+        if (what == areaViewTexture) {
+          for (ColorPatch p : patches) {
+            p.texture = null;  // release the current texture so it refreshes.
           }
         }
         break;
@@ -499,6 +504,65 @@ class Painting
         }
         break;
         
+      case 'M':
+      case 'm':  // merge patches with the selected color into one
+        if (what == areaViewColors) {
+          MunsellColor mc = colorTable.rgbToMunsell(colorSelected);
+          ArrayList<ColorPatch> cleanup = new ArrayList<ColorPatch>();
+          ColorPatch merged = null;
+          for (ColorPatch p : patches) {
+            if (mc.isEqual(p.mColor)) {
+              // merge it
+              if (merged == null)
+                merged = p;
+              else {
+                merged.add(p);
+                cleanup.add(p);
+              }
+            }
+          }
+          // cleanup
+          for (ColorPatch p : cleanup)
+            patches.remove(p);
+          currPatchIdx = -1;  // invalidate the global reference to patches by index
+          
+          bUpdateStats = true;
+        }
+        break;
+
+      case 'B':
+      case 'b':  // Break patches with the selected color into separate solids
+        if (what == areaViewColors) {
+          ArrayList<ColorPatch> orgs = new ArrayList<ColorPatch>();
+          int idMax = -1;
+          for (ColorPatch p : patches) {
+            if (p.id > idMax)
+              idMax = p.id;
+            if (p.rgbColor == colorSelected)
+              orgs.add(p);
+          }         
+          // Prepare an image with these patches
+          PImage imgTemp = createImage(imgWidth, imgHeight, RGB);  // black by default
+          for (ColorPatch o : orgs) {
+            for (PVector pv : o.points) {
+                  imgTemp.set((int)pv.x, (int)pv.y, colorSelected);
+            }
+          }          
+          // Build a painting from the image
+          Painting paintingTemp = buildPatchesByBoundary(imgTemp, color(0), imgTemp);
+          // Delete originals and add the new patches
+          for (ColorPatch o : orgs)
+            patches.remove(o);
+          for (ColorPatch p : paintingTemp.patches) {
+            p.id = ++idMax;  // make sure ID's are uniquely generated
+            patches.add(p);
+          }
+          currPatchIdx = -1;  // invalidate the global reference to patches by index
+          
+          bUpdateStats = true;
+        }
+        break;
+
       default:
         break;
     }
@@ -563,7 +627,7 @@ class Painting
     }
     else {
       for (ColorPatch p : patches) {
-        p.draw(img, kind);
+        p.draw(img, kind, this);
       }
     }
   }
@@ -1034,77 +1098,81 @@ class Painting
   }  
 }
 
-// Build a set of color patches from the image.
-// If cBase is given non-zero, only cBase colored area will be considered.
-// Boundary of a patch is identified by non-cBase color if cBase is given,
-// or cContour otherwise.
+// Build a set of color patches from the image by boundary.
+// Each continuous solid constitutes a patch if it is
+// bounded by either cContour (Contour-based) or 
+// a different color (Solid-based)
 // Patches are first built from imgSrc and then
 // all coordinates are scaled to imgScaleTo
-Painting buildPatchesFromContour(PImage imgSrc, color cBase, color cContour, PImage imgScaleTo) 
+Painting buildPatchesByBoundary(PImage imgSrc, color cContour, PImage imgScaleTo) 
 {
   color cVisited = color(128);  // use gray to mark visited while traversal
   color cDone = color(255);  // use white to mark done after a patch is done
   ArrayList<ColorPatch> patches = new ArrayList<ColorPatch>();
   PImage imgMark = createImage(imgSrc.width, imgSrc.height, RGB);  // to mark done or visited
-
+  
   for (int i = 0; i < imgSrc.width; i++) {
     for (int j = 0; j < imgSrc.height; j++) {
       color m = imgMark.get(i, j);
       if (m == cDone)
         continue;  // done in previous patch
-      color s = imgSrc.get(i, j);
-      if (cBase != 0 && rgbDistance(s, cBase) >= contourColorThreshold ||
-          cBase == 0 && rgbDistance(s, cContour) < contourColorThreshold)
-        continue;  // it's the patch boundary
 
+      color s = imgSrc.get(i, j);
+      if (cContour != colorNone && rgbDistance(s, cContour) < contourColorThreshold)
+        continue;  // it's the contour
+        
       // Create a new patch and add the points and contour to the patch
       // using floodfill algorithm.
       ArrayList<PVector> points = new ArrayList<PVector>();
       ArrayList<PVector> contourPoints = new ArrayList<PVector>();
-      
+            
       Stack<PVector> ps = new Stack<PVector>();
       ps.push(new PVector(i, j));      
       while (!ps.empty()) {
-        PVector pv = ps.pop();
+        PVector pv = ps.pop(); //<>//
         int px = (int)pv.x;
         int py = (int)pv.y;
-        
         m = imgMark.get(px, py);
         if (m == cVisited)
           continue;  // Already visited this pixel.
           
         // Has reached a new pixel; store and mark it visited
         points.add(pv);
-        imgMark.set(px, py, cVisited);
+        imgMark.set(px, py, cVisited); 
         
-        // Try neighbors. Also add it to contour if a neighbor is boundary
+        // Try neighbors. Also add it to contour if a neighbor is another patch
         boolean bContour = false;
         PVector[] arrNPV = new PVector[4];
-        arrNPV[0] = new PVector(px + 1, py);
-        arrNPV[1] = new PVector(px - 1, py);
+        arrNPV[0] = new PVector(px, py - 1);
+        arrNPV[1] = new PVector(px + 1, py);
         arrNPV[2] = new PVector(px, py + 1);
-        arrNPV[3] = new PVector(px, py - 1);
+        arrNPV[3] = new PVector(px - 1, py);
         for (PVector npv : arrNPV) {
-          s = imgSrc.get((int)npv.x, (int)npv.y);
+          // Boundary criteria are different between contour-based and solid-based;
+          // Contour-based: a similar color to contour is considered as boundary;
+          // Solid-based: any color that is different to the current one is boundary.
+          color n = imgSrc.get((int)npv.x, (int)npv.y);
           if (npv.x < 0 || npv.x >= imgSrc.width || 
               npv.y < 0 || npv.y >= imgSrc.height ||
-              cBase != 0 && rgbDistance(s, cBase) >= contourColorThreshold ||
-              cBase == 0 && rgbDistance(s, cContour) < contourColorThreshold)
-          {  // this neighbor is the boundary
+              cContour != colorNone && rgbDistance(n, cContour) < contourColorThreshold ||
+              cContour == colorNone && s != n)
+          { // this neighbor is boundary
             bContour = true;
           }
-          else {  // continue to explore this
+          else {  // continue to explore the neighbor
             ps.push(npv);
           }
         }
         if (bContour)
           contourPoints.add(pv);
       }
+      // Mart points of patch as done (from visisted)      
+      for (PVector pv : points)
+        imgMark.set((int)pv.x, (int)pv.y, cDone);
       
-      if ((points.size() - contourPoints.size()) > 0) {
+      if ((points.size() - contourPoints.size()) > 5) {
         ColorPatch p = new ColorPatch(patches.size(), imgSrc, points, contourPoints);
         patches.add(p);
-        p.drawPoints(imgMark, cDone); // mark its area as done
       }
     }
   }
@@ -1123,11 +1191,11 @@ Painting buildPatchesFromContour(PImage imgSrc, color cBase, color cContour, PIm
   return new Painting(imgScaleTo.width, imgScaleTo.height, patches);
 }
 
-// Build a set of color patches from the image, excluding the given colored area.
-// Each distinct color creates a separate patch.
+// Build a set of color patches from the image by colors.
+// Each color creates a separate patch.
 // Patches are first built from imgSrc and then
 // all coordinates are scaled to imgScaleTo
-Painting buildPatchesFromSolid(PImage imgSrc, color cSkip, PImage imgScaleTo) 
+Painting buildPatchesByColor(PImage imgSrc, PImage imgScaleTo) 
 {
   ArrayList<ColorPatch> patches = new ArrayList<ColorPatch>();
   HashMap<MunsellColor, ArrayList<PVector> > mapPoints = new HashMap<MunsellColor, ArrayList<PVector> >();
@@ -1136,8 +1204,6 @@ Painting buildPatchesFromSolid(PImage imgSrc, color cSkip, PImage imgScaleTo)
   for (int i = 0; i < imgSrc.width; i++) {
     for (int j = 0; j < imgSrc.height; j++) {
       Integer c = imgSrc.get(i, j);
-      if (cSkip != 0 && rgbDistance(c, cSkip) < contourColorThreshold)
-        continue;  // skip this color
         
       // See if the color is already in the map
       MunsellColor m = colorTable.rgbToMunsell(c);
@@ -1154,9 +1220,10 @@ Painting buildPatchesFromSolid(PImage imgSrc, color cSkip, PImage imgScaleTo)
 
       PVector pv = new PVector(i, j);
       points.add(pv);
-      // Add it to contour if its neighbor is a boundary
+
+      // Add it to contour if its neighbor is a boundary but not the edge of image
       if (i <= 0 || i >= imgSrc.width - 1 || j <= 0 || j >= imgSrc.height - 1 ||
-          c != imgSrc.get(i - 1, j) || c != imgSrc.get(i + 1, j) &&
+          c != imgSrc.get(i - 1, j) || c != imgSrc.get(i + 1, j) ||
           c != imgSrc.get(i, j - 1) || c != imgSrc.get(i, j + 1))
       {
         contourPoints.add(pv);
@@ -1168,7 +1235,7 @@ Painting buildPatchesFromSolid(PImage imgSrc, color cSkip, PImage imgScaleTo)
   for (Map.Entry<MunsellColor, ArrayList<PVector> > m : mapPoints.entrySet()) {
     ArrayList<PVector> points = m.getValue();
     ArrayList<PVector> contourPoints = mapContourPoints.get(m.getKey());
-    if ((points.size() - contourPoints.size()) > 0) {
+    if ((points.size() - contourPoints.size()) > 5) {
       ColorPatch p = new ColorPatch(patches.size(), imgSrc, points, contourPoints);
       patches.add(p);
     }
@@ -1186,26 +1253,6 @@ Painting buildPatchesFromSolid(PImage imgSrc, color cSkip, PImage imgScaleTo)
     imgScaleTo = imgSrc;
   
   return new Painting(imgScaleTo.width, imgScaleTo.height, patches);
-}
-
-// Build a set of color patches from the image.
-// First, it creates patches for all solid color areas except cBase color.
-// Then, it create patches for cBase color area using non-cBase color as boundary.
-// Patches are first built from imgSrc and then
-// all coordinates are scaled to imgScaleTo
-Painting buildPatchesFromSolidContour(PImage imgSrc, color cBase, PImage imgScaleTo) 
-{
-  // Build patches for all solid except cBase-colored area
-  Painting pSolid = buildPatchesFromSolid(imgSrc, cBase, imgScaleTo);
-  // Then, build patches for cBased-colored area contoured by any non-cBase color
-  Painting pContour = buildPatchesFromContour(imgSrc, cBase, 0, imgScaleTo);
-  
-  // Merge the two set of patches
-  for (ColorPatch p : pContour.patches)
-    p.id += pSolid.patches.size();
-  pSolid.patches.addAll(pContour.patches);
-  
-  return new Painting(pSolid.imgWidth, pSolid.imgHeight, pSolid.patches);
 }
 
 // Euclidean distance between the two RGB colors

@@ -26,6 +26,8 @@ class ColorPatch
   public boolean transParsed;  // flag if transition parameters have been parsed.
   public int transRefIdx;  // transition reference patch index
   public ArrayList<int[]> transRules;  // transition rules. [0]: type, [1]: delta
+  public int textureType; // texture type used in cache
+  public color[] texture; // texture representation of the patch
   
   // default constructor
   public ColorPatch() {}
@@ -37,12 +39,40 @@ class ColorPatch
     points = pts;
     contourPoints = cpts;
 
+    // Sort contour points in the order of proximity so it forms
+    // a continous line when following the index    
+    for (int i = 0; i < contourPoints.size(); i++) {
+      PVector last = contourPoints.get(i);  // last sorted
+      float minDist = Float.MAX_VALUE;
+      int minIdx = -1;
+      for (int j = i + 1; j < contourPoints.size(); j++) {
+        PVector v = contourPoints.get(j);
+        // optimization: stop search if this is a neighbor
+        if (abs(last.x - v.x) <= 1.0 && abs(last.y - v.y) <= 1.0) {
+          minIdx = j;
+          break;
+        }
+        float dist = last.dist(v);
+        if (dist < minDist) {
+          minIdx = j;
+          minDist = dist;
+        }
+      }
+      if (minIdx >= 0) {  // nearest to last is found; put it at last+1
+        PVector t1 = contourPoints.get(i + 1);
+        PVector t2 = contourPoints.get(minIdx);
+        PVector tmp = new PVector(t1.x, t1.y);
+        t1.x = t2.x; t1.y = t2.y;
+        t2.x = tmp.x; t2.y = tmp.y;
+      }
+    }
+    
     // Set the dimension
     xMin = Integer.MAX_VALUE;
     xMax = Integer.MIN_VALUE;
     yMin = Integer.MAX_VALUE;
     yMax = Integer.MIN_VALUE;
-    for (PVector p : cpts) {
+    for (PVector p : points) {
       xMin = min(xMin, p.x);
       xMax = max(xMax, p.x);
       yMin = min(yMin, p.y);
@@ -103,6 +133,25 @@ class ColorPatch
     transParsed = false;
   }
   
+  // Add another patch into this one.
+  // Keep all the color and master info unchanged, but
+  // just to add the area of another patch.
+  // NOTE: the contourPoints will be simply added even if
+  // added contour lines may be no longer contour after added.
+  public void add(ColorPatch p)
+  {
+    assert mColor.isEqual(p.mColor) : "Cannot add a patch of different color into another.";
+
+    points.addAll(p.points);
+    contourPoints.addAll(p.contourPoints);
+
+    // Adjust the dimension
+    xMin = min(xMin, p.xMin);
+    xMax = max(xMax, p.xMax);
+    yMin = min(yMin, p.yMin);
+    yMax = max(yMax, p.yMax);   
+  }
+  
   // Serialize to save
   public void Serialize(ObjectOutputStream oos) throws IOException
   {
@@ -152,6 +201,7 @@ class ColorPatch
     if (rgbColor != rgbColorNew || !mColor.isEqual(mColorNew)) {
       rgbColor = rgbColorNew;
       mColor = mColorNew;
+      texture = null; // invalidate texture cache
       bChanged = true;
     }
     return bChanged;
@@ -253,14 +303,9 @@ class ColorPatch
   }
   
   // Get the size of patch area
-  public float getSize()
+  public float getAreaSize()
   {
     return points.size();
-  }
-  // Get the length of patch contour
-  public float getLength()
-  {
-    return contourPoints.size();
   }
   
   // Scale all the pixel locations within the patch
@@ -283,8 +328,7 @@ class ColorPatch
   public String getStatString()
   {
     return  "Patch ID: " + id +
-            "\nArea: " + String.format("%,d", (int)getSize()) +
-                         String.format(" (%,d)", (int)getLength()) +
+            "\nArea: " + String.format("%,d", (int)getAreaSize()) +
             "\nGray Gap: " + String.format("%.1f", gGap) +
             "\nColor Gap: " + String.format("%.1f", cGap);
   }
@@ -302,11 +346,32 @@ class ColorPatch
   }
    
   // Draw the color patch to the image with local color
-  public void draw(PImage img, int kind)
+  public void draw(PImage img, int kind, Painting owner)
   {
     switch (kind) {
       case areaViewColors: // Draw local color of the patches
         drawPoints(img, rgbColor);
+        break;
+      case areaViewTexture: // Draw the color of the patches in texture
+        if (texture == null || textureType != ctrlTextureType) {  // re-create texture
+          // Identify background, line color and the density to make mColor
+          MunsellColor mcBackground = new MunsellColor(mColor);
+          mcBackground.value = colorTable.getMaxValue(mColor.hueDegree, mColor.chroma);
+          MunsellColor mcLine = new MunsellColor(mColor);
+          mcLine.value = colorTable.getMinValue(mColor.hueDegree, mColor.chroma);
+          float density = 1.0;
+          if (mcBackground.value > mcLine.value)
+            density = (mcBackground.value - mColor.value) / (mcBackground.value - mcLine.value);
+          
+          PGraphics buffer = drawTexture(owner, id, mcBackground, mcLine, density);
+          texture = new color[points.size()];
+          for (int i = 0; i < points.size(); i++) {
+            PVector p = points.get(i);
+            texture[i] = buffer.get((int)(p.x - xMin), (int)(p.y - yMin));
+          }
+          textureType = ctrlTextureType;
+        }
+        drawPoints(img, colorNone);
         break;
       case areaViewMGray: // Draw master gray-level of the patches
         drawPoints(img, colorTable.munsellToRGB(new MunsellColor(0, 0, masterGray)));
@@ -346,14 +411,23 @@ class ColorPatch
   // Draw the color patch to the image with given color
   public void drawPoints(PImage img, color c)
   {
+    boolean bTexture = (c == colorNone);
     // Draw area inside
-    for (PVector p : points) {
-          img.set((int)p.x, (int)p.y, c);
+    if (bTexture && texture != null) {  // use texture
+      for (int i = 0; i < points.size(); i++) {
+        PVector p = points.get(i);
+        img.set((int)p.x, (int)p.y, texture[i]);
+      }
+    }
+    else {
+      for (PVector p : points) {
+        img.set((int)p.x, (int)p.y, c);
+      }
     }
     // Draw contour
     if (bShowContour) {
       for (PVector p : contourPoints) {
-            img.set((int)p.x, (int)p.y, colorEdge);
+            img.set((int)p.x, (int)p.y, (bTexture) ? colorBG : colorEdge);
       }
     }
   }
