@@ -26,7 +26,10 @@ class ColorPatch
   public boolean transParsed;  // flag if transition parameters have been parsed.
   public int transRefIdx;  // transition reference patch index
   public ArrayList<int[]> transRules;  // transition rules. [0]: type, [1]: delta
-  public int textureType; // texture type used in cache
+  public int textureType; // texture info used in the cache
+  public int textureAxis;
+  public int textureGap;
+  public int textureBG;
   public color[] texture; // texture representation of the patch
   
   // default constructor
@@ -38,16 +41,17 @@ class ColorPatch
     this.id = id;
     points = pts;
     contourPoints = cpts;
-
+    
     // Sort contour points in the order of proximity so it forms
-    // a continous line when following the index    
+    // continous lines as possible, although it may have
+    // split or disjoint lines
     for (int i = 0; i < contourPoints.size(); i++) {
       PVector last = contourPoints.get(i);  // last sorted
       float minDist = Float.MAX_VALUE;
       int minIdx = -1;
       for (int j = i + 1; j < contourPoints.size(); j++) {
         PVector v = contourPoints.get(j);
-        // optimization: stop search if this is a neighbor
+        // optimization: stop search if this is already a neighbor
         if (abs(last.x - v.x) <= 1.0 && abs(last.y - v.y) <= 1.0) {
           minIdx = j;
           break;
@@ -131,6 +135,11 @@ class ColorPatch
     gGap = p.gGap; 
     cGap = p.cGap;
     transParsed = false;
+    textureType = p.textureType;
+    textureAxis = p.textureAxis;
+    textureGap = p.textureGap;
+    textureBG = p.textureBG;
+    texture = p.texture;
   }
   
   // Add another patch into this one.
@@ -352,31 +361,11 @@ class ColorPatch
       case areaViewColors: // Draw local color of the patches
         drawPoints(img, rgbColor);
         break;
-      case areaViewTexture: // Draw the color of the patches in texture
-        if (texture == null || textureType != ctrlTextureType) {  // re-create texture
-          // Identify background, line color and the density to make mColor
-          MunsellColor mcBackground = new MunsellColor(mColor);
-          mcBackground.value = colorTable.getMaxValue(mColor.hueDegree, mColor.chroma);
-          MunsellColor mcLine = new MunsellColor(mColor);
-          mcLine.value = colorTable.getMinValue(mColor.hueDegree, mColor.chroma);
-          float density = 1.0;
-          if (mcBackground.value > mcLine.value)
-            density = (mcBackground.value - mColor.value) / (mcBackground.value - mcLine.value);
-          
-          PGraphics buffer = drawTexture(owner, id, mcBackground, mcLine, density);
-          texture = new color[points.size()];
-          for (int i = 0; i < points.size(); i++) {
-            PVector p = points.get(i);
-            texture[i] = buffer.get((int)(p.x - xMin), (int)(p.y - yMin));
-          }
-          textureType = ctrlTextureType;
-        }
-        drawPoints(img, colorNone);
-        break;
       case areaViewMGray: // Draw master gray-level of the patches
         drawPoints(img, colorTable.munsellToRGB(new MunsellColor(0, 0, masterGray)));
         break;
       case areaViewMHue: // Draw master hue & chroma of the patches
+      {
         float ch = (masterHue < 0) ? 0 : masterChroma;
         float x = ch * cos(radians(masterHue));
         float y = ch * sin(radians(masterHue));
@@ -389,8 +378,10 @@ class ColorPatch
           }
         }
         break;
+      }
       case areaViewTension: // Draw tension of the local color
       case areaViewMTension: // Draw master tension
+      {
         // Color tension value ranges from [0, 80] within Munsell sphere.
         // However, practically, most of tension values are within 40 (the radius).
         // I convert it to 180 degree ranges, then use r,g,b as if it is temperature,
@@ -402,6 +393,116 @@ class ColorPatch
         float b = (t >= 90) ? 255 * -cos(radians(t)) : 0;
         drawPoints(img, color(r, g, b));
         break;
+      }
+      case areaViewTexture: // Draw the color of the patches in texture drawing
+      {
+        if (texture == null ||
+            textureType != ctrlTextureType || textureAxis != ctrlTextureAxis ||
+            textureGap != ctrlTextureGap || textureBG != ctrlTextureBG) 
+        {  // the cache doesn't exist or is no longer valid; re-create the texture
+        
+          // Identify background, foreground color and the density to make mColor
+          MunsellColor mcBackground = null;
+          MunsellColor mcForeground = null;
+          float  density = 0;
+          
+          switch (ctrlTextureAxis) {
+            case txtAxisHue:  // hue
+            {
+              // Find the unit vector that is perpendicular to the current color (mColor)
+              float ux = cos(radians(mColor.hueDegree)), uy = sin(radians(mColor.hueDegree));
+              PVector left = new PVector(-uy, ux);
+              PVector right = new PVector(uy, -ux);
+              // Generate ordered pair of left/right gap so that
+              // max gap is preferred and the mid-point is preferred within the same gap
+              ArrayList<PVector> tries = new ArrayList<PVector>();
+              for (int g = ctrlTextureGap; g > 0; g--) {
+                for (int h = g / 2; h >= 0; h--) {
+                  tries.add(new PVector(h, g - h));
+                  tries.add(new PVector(g - h, h));
+                }
+              }
+              // Find a valid pair in the Munsell sphere.
+              int bg = 0, fg = 0;
+              PVector cp = mColor.getCoordinate();
+              for (PVector t : tries) {
+                PVector lp = PVector.mult(left, t.x).add(cp);
+                PVector rp = PVector.mult(right, t.y).add(cp);                
+                if (colorTable.isMunsellKeyInMap(new MunsellColor(lp)) &&
+                    colorTable.isMunsellKeyInMap(new MunsellColor(rp))) 
+                {
+                  bg = (int)t.x;
+                  fg = (int)t.y;
+                  break;
+                }
+              }
+              if (bg + fg > 0)
+                density = (float)bg / (bg + fg);
+              if (ctrlTextureBG == txtBGLow) { // flip bg/fg and density so it uses the lower H/V/C as background
+                int t = bg; bg = fg; fg = t;
+                density = 1.0 - density;
+              }
+              mcBackground = new MunsellColor(PVector.mult(left, bg).add(cp));
+              mcForeground = new MunsellColor(PVector.mult(right, fg).add(cp));
+              break;
+            }
+            case txtAxisValue: // value
+            case txtAxisChroma: // chroma
+            default:
+            {
+              int lb, ub;  // lower/upper bound of the range of H/V/C being considered
+              int bg, fg;  // foreground/background of the range of H/V/C being considered
+              int ctr;
+              int gap = 0;
+              if (ctrlTextureAxis == txtAxisChroma) {
+                ub = colorTable.getMaxChroma(mColor.hueDegree, mColor.value);
+                lb = 0;
+                ctr = round(mColor.chroma);
+              }
+              else {
+                ub = colorTable.getMaxValue(mColor.hueDegree, mColor.chroma);
+                lb = colorTable.getMinValue(mColor.hueDegree, mColor.chroma);
+                ctr = round(mColor.value);
+              }
+              bg = fg = ctr;
+              gap = 0;
+              while (gap < ctrlTextureGap && (bg < ub || fg > lb) ) {  // adjust bg/fg by the gap amount
+                if (bg < ub) { bg++; gap++; }
+                if (fg > lb && gap < ctrlTextureGap) { fg--; gap++; }
+              }
+              if (bg > fg)
+                density = (float)(bg - ctr) / (bg - fg);
+              if (ctrlTextureBG == txtBGLow) { // flip bg/fg and density so it uses the lower H/V/C as background
+                int t = bg; bg = fg; fg = t;
+                density = 1.0 - density;
+              }
+              mcBackground = new MunsellColor(mColor);
+              mcForeground = new MunsellColor(mColor);
+              if (ctrlTextureAxis == txtAxisChroma) {
+                mcBackground.chroma = bg;
+                mcForeground.chroma = fg;
+              }
+              else {
+                mcBackground.value = bg;
+                mcForeground.value = fg;
+              }
+              break;
+            }
+          }
+          PGraphics buffer = drawTexture(owner, id, mcBackground, mcForeground, density);
+          texture = new color[points.size()];
+          for (int i = 0; i < points.size(); i++) {
+            PVector p = points.get(i);
+            texture[i] = buffer.get((int)(p.x - xMin), (int)(p.y - yMin));
+          }
+          textureType = ctrlTextureType;
+          textureAxis = ctrlTextureAxis;
+          textureGap = ctrlTextureGap;
+          textureBG = ctrlTextureBG;
+        }
+        drawPoints(img, colorNone);
+        break;
+      }
       case areaViewMTransition: // Draw master transition - handled at painting level
       default:
         break;

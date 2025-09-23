@@ -192,7 +192,7 @@ final int btnMasterX = margin;
 final int btnMasterY = margin;
 
 // Location and size of color system - Value Chroma chart
-final int vcX = btnMasterX + btnWidth + 30;
+final int vcX = btnMasterX + btnWidth + 20;
 final int vcY = btnMasterY;
 final int vcWidth = 400;
 final int vcHeight = 220;
@@ -221,9 +221,9 @@ final int infoHeight = 100;
 
 // Color chord controls and colors
 final int chordX = btnMasterX;
-final int chordY = hY + hRadius + 120;
+final int chordY = hY + hRadius + 110;
 final int chordCellWidth = 50;
-final int chordCellHeight = 30;
+final int chordCellHeight = 25;
 final int chordColorX = chordX + chordCellWidth * 4 + 40;
 final int chordColorY = chordY;
 final int chordColorWidth = 610;
@@ -237,14 +237,14 @@ final int cpHeight = chordColorHeight;
 
 // Control parameters
 final int ctrlX = btnMasterX;
-final int ctrlY = chordY + (chordCellHeight + 10) * numChords + 30;
-final int ctrlWidth = 500;
+final int ctrlY = chordY + (chordCellHeight + 10) * numChords + 10;
+final int ctrlWidth = 600;
 final int ctrlHeight = 20;
 
 // Analysis statistics box
-final int statX = ctrlX + ctrlWidth + 70;
+final int statX = ctrlX + ctrlWidth + 50;
 final int statY = ctrlY - 10;
-final int statWidth = 300;
+final int statWidth = 200;
 final int statHeight = 165;
 
 // Buttons for View menu
@@ -349,7 +349,11 @@ MunsellColor ctrlCentroid = null;  // centroid color for painting
 float ctrlHueVariance = 20;  // hue range from master hue
 float ctrlTensionScale = 1.0;  // scale to adjust master tension
 float[] ctrlComplexity = {2, 2.5};  // complexity target
-int ctrlTextureType = 1;  // texture to be used
+// Control parameters for texture drawing
+int ctrlTextureType = 0;  // texture generation type
+int ctrlTextureAxis = 0; // axis of the Munsell to select texture colors
+int ctrlTextureGap = 6; // distance between background and foreground color of texture
+int ctrlTextureBG = 0; // where to use the higher or lower H/V/C as background
 
 void setup() 
 {
@@ -403,23 +407,28 @@ void doAction(int area)
       if (mouseButton == LEFT) {
         // Get the input image file name from dialog
         pathName = null;
-        selectInput("Select an image to load:", "pathNameSelected", new File("./"));
+        selectInput("Select an image to load:", "pathNameSelected", new File("./*.gif;*.jpg;*.tga;*.png"));
         while (pathName == null) delay(200); // Wait until a Input dialog is done
         if (pathName.equals(""))  // Dialog is cancelled - do nothing
           break;
           
         // Load the input image and copy/scale it to the work space
         cursor(WAIT);
-        imgInput = loadImage(pathName);
+        PImage img = loadImage(pathName);
+        cursor(ARROW);
+        if (img == null) {
+          drawTextBox("Failed to load the image file: " + pathName, msgX, msgY, msgWidth, msgHeight);
+          break;
+        }
         
         // Scale image to the screen area for workspace, while
         // keeping original image unchanged for building patches without loss
+        imgInput = img;
         imgWork = imgInput.copy();
         if (imgWork.width > imgWidthMax)
           imgWork.resize(imgWidthMax, 0);
         if (imgWork.height > imgHeightMax)
           imgWork.resize(0, imgHeightMax);
-        cursor(ARROW);
         drawImage();
         
         // Reset everything built upon previous image
@@ -439,7 +448,7 @@ void doAction(int area)
       if (mouseButton == LEFT && imgInput != null && imgWork != null) {
         // Build color patches from original image to avoid any loss in contour pixels.
         cursor(WAIT);
-        Painting p;
+        Painting p; //<>//
         if (area == areaBuildCTR)
           p = buildPatchesByBoundary(imgInput, colorSelected, imgWork);
         else if (area == areaBuildSLD)
@@ -447,23 +456,28 @@ void doAction(int area)
         else
           p = buildPatchesByColor(imgInput, imgWork);
         cursor(ARROW);
-        imgInput = null;  // do not build it from again
-       
-        // Copy gray level and hue of the current painting to its master specification
-        p.update(areaViewMGray, 'p', null, null);
-        p.update(areaViewMHue, 'p', null, null);
-
-        imgWork = createImage(imgWork.width, imgWork.height, RGB);  // start a fresh draw
-        
-        painter = null;
-        paintings.clear();
-        paintings.add(p);
-        currPaintingIdx = 0;
-        storedPainting = new Painting(p);  // set this one as stored as well
-        currPatchIdx = -1;
-        resetUndoPainting();
-        viewMode = areaViewColors;
-        drawTextBox("A painting with " + p.patches.size() + " color patches has been built.", msgX, msgY, msgWidth, msgHeight);
+        if (p == null) {
+          drawTextBox("No valid patches were found. Failed to create a painting.", msgX, msgY, msgWidth, msgHeight);
+        }
+        else {
+          imgInput = null;  // do not build it from again
+         
+          // Copy gray level and hue of the current painting to its master specification
+          p.update(areaViewMGray, 'p', null, null);
+          p.update(areaViewMHue, 'p', null, null);
+  
+          imgWork = createImage(imgWork.width, imgWork.height, RGB);  // start a fresh draw
+          
+          painter = null;
+          paintings.clear();
+          paintings.add(p);
+          currPaintingIdx = 0;
+          storedPainting = new Painting(p);  // set this one as stored as well
+          currPatchIdx = -1;
+          resetUndoPainting();
+          viewMode = areaViewColors;
+          drawTextBox("A painting with " + p.patches.size() + " color patches has been built.", msgX, msgY, msgWidth, msgHeight);
+        }
       }
       break;
 
@@ -478,6 +492,10 @@ void doAction(int area)
         cursor(WAIT);
         Painting p = deserializeStudio(pathName);
         cursor(ARROW);
+        if (p == null) {
+          drawTextBox("Failed to open the ORStudio file: " + pathName, msgX, msgY, msgWidth, msgHeight);
+          break;
+        }
         imgWork = createImage(p.imgWidth, p.imgHeight, RGB);  // start a fresh draw
         painter = null;
         paintings.clear();
@@ -980,6 +998,14 @@ void pathNameSelected(File selection)
 // The default draw() - display the current state of everything that changes
 void draw() 
 {
+  // If controllers are active, make sure no drawing while a dropdown is open
+  if (cp5.getController("ctrlNumPaintings") != null) {
+    if (((ScrollableList)cp5.getController("ctrlTextureType")).isOpen() ||
+        ((ScrollableList)cp5.getController("ctrlTextureAxis")).isOpen() ||
+        ((ScrollableList)cp5.getController("ctrlTextureBG")).isOpen())
+      return;
+  }
+
   if (painter != null && !bPause) {
     int pIdx = painter.paintOne();
     String msg = "Painting No. " + (pIdx + 1) + " is done.";
@@ -1344,12 +1370,17 @@ ArrayList<MunsellColor> getColorsFromAllChords(Chord[] chords)
 // Draw all controls
 void drawControls() 
 {
+  int labelW = 120;
+  int ctrlW = ctrlWidth - labelW;
+  
+  // Erase the area as some of ControlP5 controls leave loose-ends
+  fill(colorBG); noStroke();
+  rect(ctrlX + labelW, ctrlY, ctrlW, msgY - ctrlY);
+
   if (cp5.getController("ctrlNumPaintings") == null) {
     // Create all controls
     int x = ctrlX;
     int y = ctrlY;
-    int labelW = 110;
-    int ctrlW = ctrlWidth - labelW;
     
     drawTextBox("Paintings", x, y, labelW, ctrlHeight);
     cp5.addSlider("ctrlNumPaintings").setValue(ctrlNumPaintings).setRange(1, 500)
@@ -1377,11 +1408,35 @@ void drawControls()
     cp5.addRange("ctrlComplexity").setBroadcast(false).setLabel("")
                .setPosition(x + labelW, y).setSize(ctrlW, ctrlHeight).setHandleSize(10)
                .setRange(0, 6).setRangeValues(ctrlComplexity[0], ctrlComplexity[1]).setBroadcast(true);
-               
+    
+    // Texture controls
+    ScrollableList sl;
     y += ctrlHeight + 10;
     drawTextBox("Texture", x, y, labelW, ctrlHeight);
-    cp5.addSlider("ctrlTextureType").setValue(ctrlTextureType).setRange(1, 10)
-          .setLabel("").setPosition(x + labelW, y).setSize(ctrlW, ctrlHeight);
+    x += labelW;
+    sl = cp5.addScrollableList("ctrlTextureType").setPosition(x, y).setSize(150, ctrlHeight * 8)
+          .setBarHeight(ctrlHeight).setItemHeight(ctrlHeight).addItems(txtTypeNames)
+          .setValue(ctrlTextureType);
+    sl.getCaptionLabel().getStyle().marginTop = 4;
+    sl.getValueLabel().getStyle().marginTop = 4;
+
+    x += 150 + 5;
+    sl = cp5.addScrollableList("ctrlTextureAxis").setPosition(x, y).setSize(100, ctrlHeight * 4)
+          .setBarHeight(ctrlHeight).setItemHeight(ctrlHeight).addItems(txtAxisNames)
+          .setValue(ctrlTextureAxis);
+    sl.getCaptionLabel().getStyle().marginTop = 4;
+    sl.getValueLabel().getStyle().marginTop = 4;
+    
+    x += 100 + 5;
+    cp5.addSlider("ctrlTextureGap").setValue(ctrlTextureGap).setRange(1, 20)
+          .setLabel("").setPosition(x, y).setSize(135, ctrlHeight);
+         
+    x += 135 + 5;
+    sl = cp5.addScrollableList("ctrlTextureBG").setPosition(x, y).setSize(80, ctrlHeight * 3)
+          .setBarHeight(ctrlHeight).setItemHeight(ctrlHeight).addItems(txtBGNames)
+          .setValue(ctrlTextureBG);
+    sl.getCaptionLabel().getStyle().marginTop = 4;
+    sl.getValueLabel().getStyle().marginTop = 4;
   }
   else {
     // Update control values
@@ -1393,6 +1448,9 @@ void drawControls()
     cp5.getController("ctrlTensionScale").setValue(ctrlTensionScale);
     ((Range)cp5.getController("ctrlComplexity")).setRangeValues(ctrlComplexity[0], ctrlComplexity[1]);
     cp5.getController("ctrlTextureType").setValue(ctrlTextureType);
+    cp5.getController("ctrlTextureAxis").setValue(ctrlTextureAxis);
+    cp5.getController("ctrlTextureGap").setValue(ctrlTextureGap);
+    cp5.getController("ctrlTextureBG").setValue(ctrlTextureBG);
   }
 }
 
@@ -1416,6 +1474,9 @@ void ctrlComplexity(ControlEvent v) {
   ctrlComplexity[1] = (float)(v.getController().getArrayValue(1));
 }
 void ctrlTextureType(int v) { ctrlTextureType = v; }
+void ctrlTextureAxis(int v) { ctrlTextureAxis = v; }
+void ctrlTextureGap(int v) { ctrlTextureGap = v; }
+void ctrlTextureBG(int v) { ctrlTextureBG = v; }
 
 // Draw text box
 void drawTextBox(String text, int x, int y, int w, int h)
@@ -1457,6 +1518,10 @@ void serializeStudio(String path)
     oos.writeFloat(ctrlTensionScale);
     oos.writeFloat(ctrlComplexity[0]);
     oos.writeFloat(ctrlComplexity[1]);
+    oos.writeInt(ctrlTextureType);
+    oos.writeInt(ctrlTextureAxis);
+    oos.writeInt(ctrlTextureGap);
+    oos.writeInt(ctrlTextureBG);
     
     oos.close();
     bos.close();
@@ -1484,6 +1549,10 @@ Painting deserializeStudio(String path)
     ctrlTensionScale = ois.readFloat();
     ctrlComplexity[0] = ois.readFloat();
     ctrlComplexity[1] = ois.readFloat();
+    ctrlTextureType = ois.readInt();
+    ctrlTextureAxis = ois.readInt();
+    ctrlTextureGap = ois.readInt();
+    ctrlTextureBG = ois.readInt();
 
     ois.close();
     bis.close();

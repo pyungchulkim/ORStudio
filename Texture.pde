@@ -1,16 +1,37 @@
-// Built-in texture types - it needs to be [1,10] as it is used in slider range
-// and 1 being default.
-final int txtTypeCrossHatching = 1; // uniformly distanced cross hatching
-final int txtTypeContour = 2;  // repeating contour from patches in the painting
-final int txtTypeUniformHorizonal = 3;  // uniformly distanced horizontal lines
-final int txtTypeUniformVertical = 4;  // uniformly distanced vertical lines
-final int txtTypeFractal01 = 5;  // fractal 01
+// Built-in texture types.
+final int txtTypeCrossHatching = 0;
+final int txtTypeContour = 1;
+final int txtTypeUniformHorizonal = 2;
+final int txtTypeUniformVertical = 3;
+final int txtTypeFractal01 = 4;
+final int txtTypeFractal02 = 5;
+final String[] txtTypeNames = {
+    "CROSS",
+    "CONTOUR",
+    "HORIZONTAL",
+    "VERTICAL",
+    "FRACTAL01",
+    "FRACTAL02"
+};
 
-final int txtLineWidth = 1;  // drawing line width for texture
+// The axis on which background/foreground color will lie
+final int txtAxisValue = 0;
+final int txtAxisChroma = 1;
+final int txtAxisHue = 2;
+final String[] txtAxisNames = {"VALUE", "CHROMA", "HUE"};
+
+// Whether to use lower or higher H/V/C as background
+final int txtBGHigh = 0;
+final int txtBGLow = 1;
+final String[] txtBGNames = {"HIGH", "LOW"};
 
 PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, MunsellColor mcLine, float density) 
 {
-  int type = ctrlTextureType;
+  float lineWidth = map(density, 0, 1, 1, 3);  // use thicker lines for higher density
+
+  //DEBUG
+  println("ID:", id, mcBackground.getString(), mcLine.getString(), density);
+  
   color cBackground = colorTable.munsellToRGB(mcBackground);
   color cLine = colorTable.munsellToRGB(mcLine);
 
@@ -29,19 +50,18 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
   int h = (int)(currPatch.yMax - currPatch.yMin + 1);
   
   PGraphics buffer = createGraphics(w, h);
-  buffer.noSmooth();  // no pixel interpolation
   buffer.beginDraw();
   buffer.background(cBackground);
   buffer.noFill();
   buffer.stroke(cLine);
-  buffer.strokeWeight(txtLineWidth);
+  buffer.strokeWeight(lineWidth);
   
-  switch (type) {
+  switch (ctrlTextureType) {
     case txtTypeCrossHatching: // uniformly distanced cross hatching
     {
       // Calculate thickness of the line crossing diagonal (slanted)
       float diagAngle = 2 * PVector.angleBetween(new PVector(w, 0), new PVector(w, h)) - PI / 2;
-      float thickness = txtLineWidth / cos(diagAngle);
+      float thickness = lineWidth / cos(diagAngle);
       float diag = sqrt(w * w + h * h);
       float numLines = density * diag / thickness;
       numLines *= 1 + density / 2; // adjust the effect of cross-hatching and random noise for higher density
@@ -52,57 +72,75 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
         buffer.line(w - i * 4 * w / numLines + random(-dist, dist), 0, w, i * 4 * h / numLines + random(-dist, dist));
       break;
     }
-    case txtTypeContour: // repeat segment of contour lines
+    case txtTypeContour: // repeat segment of contour lines of big patches in the painting
     {
-      float prevDensity = 0;
-      int densityInterval = 5;
-      int count = 0;
-      while (count < 100000) {
-        // randomly select a patch whose contour will be used
-        int idx = -1;
-        for (int i = 0; i < owner.patches.size(); i++) {
-          idx = (int)random(owner.patches.size());
-          if (owner.patches.get(idx).getAreaSize() > owner.imgWidth * owner.imgHeight * 0.02)
-            break;
-        }
-        
-        ArrayList<PVector> contourPoints = owner.patches.get(idx).contourPoints;
-        
-        int segStart = (int)random(contourPoints.size());
-        int segLength = (int)random(contourPoints.size() / 5, contourPoints.size() / 2);
-        PVector org = new PVector(random(w), random(h));
-        
-        buffer.beginShape();
-        PVector ps = contourPoints.get(segStart);
-        PVector pp = ps;
-        for (int i = 0; i < segLength; i++) {
-          PVector p = contourPoints.get((segStart + i)  % contourPoints.size());
-          if (pp.dist(p) > 2)
-            break;  // disconnected contour; stop
-          pp = p;
-          if (i % 10 == 0) {
-            if (p.x > 0 && p.x < owner.imgWidth - 1 && p.y > 0 && p.y < owner.imgHeight - 1)
+      float lastDensity = 0;
+      int batchSize = 2;
+      int countTotal = 0;
+      while (lastDensity < (density - 0.05)) {  // stop when the density is close enough
+        while (batchSize-- > 0) {
+          // randomly select a patch to use that:
+          // - the shape is not cut by the edge of the image; and
+          // - its size is not too small (> .2%) and not too big (< 25% of image)
+          int idx = (int)random(owner.patches.size());
+          for (int i = 0; i < owner.patches.size(); i++) {
+            int j = (idx + i) % owner.patches.size();
+            ColorPatch p = owner.patches.get(j);
+            if (p.xMin > 0 && p.xMax < owner.imgWidth - 1 &&
+                p.yMin > 0 && p.yMax < owner.imgHeight - 1 &&
+                p.getAreaSize() > owner.imgWidth * owner.imgHeight * 0.002 &&
+                p.getAreaSize() < owner.imgWidth * owner.imgHeight * 0.25)
+            {
+              idx = j;
+              break;
+            }
+          }
+          
+          //ArrayList<PVector> contourPoints = owner.patches.get(idx).contourPoints;
+          // prepare scale down copy of the selected patch
+          ArrayList<PVector> contourPoints = new ArrayList<PVector>();
+          float scale = 0.5 + random(0.5);
+          for (PVector p : owner.patches.get(idx).contourPoints) {
+            PVector v = new PVector(p.x * scale, p.y * scale);
+            contourPoints.add(v);
+          }
+          
+          // replicate a random segment of larger than half size
+          int segStart = (int)random(contourPoints.size());
+          int segLength = (int)random(contourPoints.size() / 2, contourPoints.size());
+          PVector org = new PVector(random(w), random(h));
+          
+          buffer.beginShape();
+          PVector ps = contourPoints.get(segStart);
+          PVector pp = ps;
+          for (int i = 0; i < segLength; i++) {
+            PVector p = contourPoints.get((segStart + i)  % contourPoints.size());
+            if (//p.x <= 0 || p.x >= owner.imgWidth - 1 || p.y <= 0 || p.y >= owner.imgHeight - 1 ||
+                pp.dist(p) > 5)
+              break;  // image edge or disconnected contour; stop
+            pp = p;
+            if (i % 10 == 0)
               buffer.curveVertex(org.x + p.x - ps.x, org.y + p.y - ps.y);
           }
+          buffer.endShape();
+          countTotal++;
         }
-        buffer.endShape();
         
-        count++;
-        
-        // Check the density periodicall to see if we're done.
-        // The check interval gets adjusted depending on speed of progress.
-        // Also, early break if it looks like we end up over done.
-        if (count % densityInterval == 0) {
-          float d = getDensity(buffer, currPatch, cLine);
-          if (d + (d - prevDensity) >= density)
-            break;
-          densityInterval *= (d - prevDensity < 0.05) ? 1.2 : 0.8;
-          densityInterval = min(1000, max(2, densityInterval));
-          prevDensity = d;
+        // After done each batch, adjust the next batch size based upon
+        // the density process so that each batch increases the density
+        // roughly about [gap to goal, 0.05].
+        lastDensity = getDensity(buffer, currPatch, cBackground, cLine);
+        if (lastDensity <= 0.001) {  // almost nothing has been drawed yet
+          batchSize = 2;
+        }
+        else {
+          float dd = lastDensity / countTotal;  // avg density delta per count
+          float goal = min(0.05, density - lastDensity);
+          batchSize = (int)min(100, max(1, goal / max(dd, Float.MIN_VALUE)));
         }
       }
       break;
-    }    
+    }
     case txtTypeFractal01: // fractal 01
     {
       float nextAngle = 180.0;
@@ -137,46 +175,55 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
           }
         }
         apexCount++;
-        if (apexCount % 100 == 0 && getDensity(buffer, currPatch, cLine) >= density)
+        if (apexCount % 100 == 0 && getDensity(buffer, currPatch, cBackground, cLine) >= density)
           break;
       }
       break;
     }
     case txtTypeUniformHorizonal: // uniform horizontal lines
+    {
+      float numLines = density * h / lineWidth;
+      for (int i = 0; i < numLines; i++)
+        buffer.line(0, i * h / numLines, w, i * h / numLines);
+      break;
+    }
     case txtTypeUniformVertical: // uniform vertical lines
     default:
     {
-      if (type == txtTypeUniformVertical) {
-        float numLines = density * w / txtLineWidth;
-        for (int i = 0; i < numLines; i++)
-          buffer.line(i * w / numLines, 0, i * w / numLines, h);
-      }
-      else {
-        float numLines = density * h / txtLineWidth;
-        for (int i = 0; i < numLines; i++)
-          buffer.line(0, i * h / numLines, w, i * h / numLines);
-      }
+      float numLines = density * w / lineWidth;
+      for (int i = 0; i < numLines; i++)
+        buffer.line(i * w / numLines, 0, i * w / numLines, h);
       break;
     }
   }
   buffer.endDraw();
   cursor(ARROW);
-  float d = getDensity(buffer, currPatch, cLine);
-  println("Density:", "id=" + currPatch.id, "desired=" + density, 
-      "actual=" + d, "gap=" + (d - density), abs(d - density) > 0.2 ? "BIG" : "");
+  if (debug) {
+    float d = getDensity(buffer, currPatch, cBackground, cLine);
+    if (currPatch.getAreaSize() > 1000 && abs(d - density) > 0.2)
+      println("BIG DENSITY GAP:", "id=" + currPatch.id, "size=" + currPatch.getAreaSize(), 
+              "desired=" + density, "actual=" + d, "gap=" + (d - density));
+  }
   return buffer;
 }
 
-// Obtain the density of the given color in the graphics buffer
-// within the area by the patch.
-float getDensity(PGraphics buffer, ColorPatch p, color c)
+// Obtain the density of the foreground color against the background color
+// in the graphics buffer covered by the patch
+float getDensity(PGraphics buffer, ColorPatch p, color cBG, color cFG)
 {
-  float sum = 0.0;
+  float r = 0.0;
+  float g = 0.0;
+  float b = 0.0;
   for (PVector v : p.points) {
-    if (buffer.get((int)(v.x - p.xMin), (int)(v.y - p.yMin)) == c)
-      sum++;
+    color c = buffer.get((int)(v.x - p.xMin), (int)(v.y - p.yMin));
+    r += red(c);
+    g += green(c);
+    b += blue(c);
   }
-  return sum / p.getAreaSize();
+  color avgColor = color(r / p.points.size(), g / p.points.size(), b / p.points.size());
+  float bgDist = rgbDistance(avgColor, cBG);
+  float fgDist = rgbDistance(avgColor, cFG);
+  return bgDist / (bgDist + fgDist);
 }
 
 class Apex

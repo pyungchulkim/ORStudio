@@ -123,7 +123,7 @@ class Painting
     for (ColorPatch p : org.patches)
       newPatches.add(new ColorPatch(p));
     patches = newPatches;
-    centroid = new MunsellColor(org.centroid);
+    centroid = new MunsellColor(org.centroid); //<>//
     tension = org.tension;
     tensionComplexity = org.tensionComplexity;
     complexity = org.complexity;
@@ -584,7 +584,7 @@ class Painting
   // Create string for the painting statistics
   public String getStatString()
   {
-    return "# of Patches: " + patches.size() +
+    return "# of Patches: " + patches.size() + //<>//
            "\nPaint Coverage: " + String.format("%.1f%%", coverage * 100) +
            "\nCentroid: " + centroid.getString() +
            "\nTension: " + String.format("%.1f", tension) +
@@ -1129,7 +1129,7 @@ Painting buildPatchesByBoundary(PImage imgSrc, color cContour, PImage imgScaleTo
       Stack<PVector> ps = new Stack<PVector>();
       ps.push(new PVector(i, j));      
       while (!ps.empty()) {
-        PVector pv = ps.pop(); //<>//
+        PVector pv = ps.pop();
         int px = (int)pv.x;
         int py = (int)pv.y;
         m = imgMark.get(px, py);
@@ -1177,6 +1177,9 @@ Painting buildPatchesByBoundary(PImage imgSrc, color cContour, PImage imgScaleTo
     }
   }
 
+  if (patches.size() < 1)  // no valid patches are found
+    return null;
+    
   if (imgScaleTo != null) {
     float xScale = (float)imgScaleTo.width / imgSrc.width;
     float yScale = (float)imgScaleTo.height / imgSrc.height;
@@ -1241,6 +1244,9 @@ Painting buildPatchesByColor(PImage imgSrc, PImage imgScaleTo)
     }
   }
   
+  if (patches.size() < 1)  // no valid patches are found
+    return null;
+
   if (imgScaleTo != null) {
     float xScale = (float)imgScaleTo.width / imgSrc.width;
     float yScale = (float)imgScaleTo.height / imgSrc.height;
