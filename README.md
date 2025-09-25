@@ -20,6 +20,6 @@ ORStudio is written in Processing 4.3 with Java. No additional libraries need to
 
 Pyungchul Kim, 2024
 
-http://orderedrandom.com
+https://orderedrandom.com
 
 
