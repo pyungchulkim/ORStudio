@@ -438,12 +438,15 @@ class ColorPatch
               }
               if (bg + fg > 0)
                 density = (float)bg / (bg + fg);
-              if (ctrlTextureBG == txtBGLow) { // flip bg/fg and density so it uses the lower H/V/C as background
-                int t = bg; bg = fg; fg = t;
+              if (ctrlTextureBG == txtBGHigh) {
+                mcBackground = new MunsellColor(PVector.mult(left, bg).add(cp));
+                mcForeground = new MunsellColor(PVector.mult(right, fg).add(cp));
+              }
+              else {
+                mcBackground = new MunsellColor(PVector.mult(right, fg).add(cp));
+                mcForeground = new MunsellColor(PVector.mult(left, bg).add(cp));
                 density = 1.0 - density;
               }
-              mcBackground = new MunsellColor(PVector.mult(left, bg).add(cp));
-              mcForeground = new MunsellColor(PVector.mult(right, fg).add(cp));
               break;
             }
             case txtAxisValue: // value

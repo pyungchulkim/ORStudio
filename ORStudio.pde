@@ -1414,7 +1414,7 @@ void drawControls()
     y += ctrlHeight + 10;
     drawTextBox("Texture", x, y, labelW, ctrlHeight);
     x += labelW;
-    sl = cp5.addScrollableList("ctrlTextureType").setPosition(x, y).setSize(150, ctrlHeight * 8)
+    sl = cp5.addScrollableList("ctrlTextureType").setPosition(x, y).setSize(150, ctrlHeight * 6)
           .setBarHeight(ctrlHeight).setItemHeight(ctrlHeight).addItems(txtTypeNames)
           .setValue(ctrlTextureType);
     sl.getCaptionLabel().getStyle().marginTop = 4;

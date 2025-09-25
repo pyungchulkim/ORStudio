@@ -642,6 +642,16 @@ class Painting
     return -1;
   }
   
+  // Find the patch index by id
+  public int findPatchIdx(int id)
+  {
+    for (int i = 0; i < patches.size(); i++) {
+      if (patches.get(i).id == id)
+        return i;
+    }
+    return -1;
+  }
+  
   // Plot coordinates of all patch colors to a square area.
   // xAngle and zAngle are used to rotate the coordinates.
   // All color points are layered so that closer ones (less y-value) shows on top of
