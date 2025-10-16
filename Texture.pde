@@ -29,9 +29,6 @@ final String[] txtBGNames = {"HIGH", "LOW"};
 
 PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, MunsellColor mcForeground, float density) 
 {
-  //DEBUG
-  println("DrawTexture:", txtTypeNames[ctrlTextureType], id, mcBackground.getString(), mcForeground.getString(), density);
-
   int pi = owner.findPatchIdx(id);
   if (pi < 0)
     return null; // No patch is found with the id

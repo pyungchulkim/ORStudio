@@ -2,7 +2,7 @@ final float similarColorGap = 2;  // color gap that is considered similar
 final float similarTensionGap = 4;  // tension gap that is considered similar
 final float similarHueGap = 9;  // hue degree gap that is considered similar
 final float similarChromaGap = 2;  // chroma gap that is considered similar
-final float similarValueGap = 2;  // value gap that is considered similar
+final float similarValueGap = 1;  // value gap that is considered similar
 
 // flag to show reference lines in transition view
 boolean bShowReferenceLine = false;
@@ -1028,14 +1028,7 @@ class Painting
     List<Map.Entry<MunsellColor, Float> > list = new LinkedList<Map.Entry<MunsellColor, Float> >(histogram.entrySet());
     Collections.sort(list, Comparator.comparing((Map.Entry<MunsellColor, Float> e) -> -e.getValue()));
 
-    // Extract the first maxColors and sort them in the order of hue/value/chroma
-    MunsellColor[] arrMC = new MunsellColor[min(maxColors, list.size())];
-    for (int i = 0; i < maxColors && i < list.size(); i++) {
-      arrMC[i] = list.get(i).getKey();
-    }
-    Arrays.sort(arrMC, Comparator.comparing((MunsellColor mc) -> mc.hueDegree * 10000 + mc.value * 100 + mc.chroma));
-    
-    // Save it to the file
+    // Save it to the file up to maxColors
     int cellWidth = 200;
     int cellHeight = 50;
     PGraphics pg = createGraphics(cellWidth * maxCols, cellHeight * maxRows);
@@ -1046,7 +1039,8 @@ class Painting
     pg.fill(color(255));
     pg.rect(0, 0, pg.width, pg.height);
     pg.textFont(createFont("Arial", 18)); pg.textAlign(LEFT, TOP); 
-    for (MunsellColor mc : arrMC) {
+    for (int i = 0; i < maxColors && i < list.size(); i++) {
+      MunsellColor mc = list.get(i).getKey();
       pg.fill(colorTable.munsellToRGB(mc));
       pg.rect(col * cellWidth, row * cellHeight, cellHeight - 10, cellHeight - 10);
       pg.fill(color(0));
@@ -1180,10 +1174,8 @@ Painting buildPatchesByBoundary(PImage imgSrc, color cContour, PImage imgScaleTo
       for (PVector pv : points)
         imgMark.set((int)pv.x, (int)pv.y, cDone);
       
-      if ((points.size() - contourPoints.size()) > 5) {
-        ColorPatch p = new ColorPatch(patches.size(), imgSrc, points, contourPoints);
-        patches.add(p);
-      }
+      ColorPatch p = new ColorPatch(patches.size(), imgSrc, points, contourPoints);
+      patches.add(p);
     }
   }
 
@@ -1248,10 +1240,8 @@ Painting buildPatchesByColor(PImage imgSrc, PImage imgScaleTo)
   for (Map.Entry<MunsellColor, ArrayList<PVector> > m : mapPoints.entrySet()) {
     ArrayList<PVector> points = m.getValue();
     ArrayList<PVector> contourPoints = mapContourPoints.get(m.getKey());
-    if ((points.size() - contourPoints.size()) > 5) {
-      ColorPatch p = new ColorPatch(patches.size(), imgSrc, points, contourPoints);
-      patches.add(p);
-    }
+    ColorPatch p = new ColorPatch(patches.size(), imgSrc, points, contourPoints);
+    patches.add(p);
   }
   
   if (patches.size() < 1)  // no valid patches are found

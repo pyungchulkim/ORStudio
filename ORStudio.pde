@@ -165,7 +165,7 @@
 //     and mouse mappings is doAction() and keyPressed(), and Painting::update() in the code.
 //
 // by Pyungchul Kim, 2025
-// http://orderedrandom.com
+// https://orderedrandom.com
 //
 
 import java.util.*;
