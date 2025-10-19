@@ -27,6 +27,9 @@ final int txtBGHigh = 0;
 final int txtBGLow = 1;
 final String[] txtBGNames = {"HIGH", "LOW"};
 
+final float minDensity = 0.02;  // min density to achieve minimum textural quality
+final float maxDensity = 0.98;  // max density to achieve so we avoid too many attempts
+
 PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, MunsellColor mcForeground, float density) 
 {
   int pi = owner.findPatchIdx(id);
@@ -34,7 +37,6 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
     return null; // No patch is found with the id
   ColorPatch currPatch = owner.patches.get(pi);
     
-  cursor(WAIT);
   float lineWidth = map(density, 0, 1, 1, 3);  // use thicker lines for higher density  
   color cBackground = colorTable.munsellToRGB(mcBackground);
   color cForeground = colorTable.munsellToRGB(mcForeground);
@@ -43,15 +45,20 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
   int h = (int)(currPatch.yMax - currPatch.yMin + 1);
   
   PGraphics buffer = createGraphics(w, h);
+  buffer.noSmooth();  // avoid smoothing to calculate density accurately; must come before beginDraw()
+
   buffer.beginDraw();
   buffer.background(cBackground);
   if (cBackground == cForeground) {  // nothing further to be done
     buffer.endDraw();
     return buffer;
   }
+  cursor(WAIT);
   buffer.noFill();
   buffer.stroke(cForeground);
   buffer.strokeWeight(lineWidth);
+
+  density = max(min(density, maxDensity), minDensity);
   
   switch (ctrlTextureType) {
     case txtTypeCrossHatching: // uniformly distanced cross hatching
@@ -74,7 +81,6 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
       float lastDensity = 0;
       int batchSize = 2;
       int countTotal = 0;
-      density = min(density, 0.98);  // cap it so we avoid too many attempts
       while (lastDensity < density) {
         while (batchSize-- > 0) {
           // randomly select a patch to use that:
@@ -110,7 +116,7 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
           PVector pp = ps;
           for (int i = 0; i < segLength; i++) {
             PVector p = contourPoints.get((segStart + i)  % contourPoints.size());
-            if (//p.x <= 0 || p.x >= owner.imgWidth - 1 || p.y <= 0 || p.y >= owner.imgHeight - 1 ||
+            if (p.x <= 0 || p.x >= owner.imgWidth - 1 || p.y <= 0 || p.y >= owner.imgHeight - 1 ||
                 pp.dist(p) > 5)
               break;  // image edge or disconnected contour; stop
             pp = p;
@@ -123,7 +129,7 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
         // After done each batch, adjust the next batch size based upon
         // the density process so that each batch increases the density
         // roughly about [gap to goal, 0.05].
-        lastDensity = getDensity(buffer, currPatch, cBackground, cForeground);
+        lastDensity = getDensity(buffer, currPatch, cForeground);
         if (lastDensity <= 0.001) {  // almost nothing has been drawn yet
           batchSize = 2;
         }
@@ -140,7 +146,7 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
       int minSize = 5;
       int maxSize = 20;
 
-      int total = (int)(w * h * min(density, 0.98));  // # of pixels to cover
+      int total = (int)(w * h * density);  // # of pixels to cover
       while (total > 0) {
         int size = (int)random(minSize, maxSize);
         ArrayList<PVector> q = new ArrayList<PVector>();
@@ -165,10 +171,7 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
     case txtTypeFractalBranch: // fractal - tree branches
     case txtTypeFractalEx:
     {
-      //randomSeed(999);
-      density = min(density, 0.98);  // cap it so we avoid too many attempts
       float lastDensity = 0.0;
-
       while (lastDensity < density) {
         // start a new growth from a random location
         ArrayList<FractalStem> stems = new ArrayList<FractalStem>();
@@ -189,7 +192,7 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
           stems.addAll(children);
         }
         // update density after each fractal
-        lastDensity = getDensity(buffer, currPatch, cBackground, cForeground);
+        lastDensity = getDensity(buffer, currPatch, cForeground);
       }
       break;
     }
@@ -212,7 +215,7 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
   buffer.endDraw();
   cursor(ARROW);
   if (debug) {
-    float d = getDensity(buffer, currPatch, cBackground, cForeground);
+    float d = getDensity(buffer, currPatch, cForeground);
     if (currPatch.getAreaSize() > 1000 && abs(d - density) > 0.2)
       println("BIG DENSITY GAP:", "id=" + currPatch.id, "size=" + currPatch.getAreaSize(), 
               "desired=" + density, "actual=" + d, "gap=" + (d - density));
@@ -278,21 +281,13 @@ class FractalStem
   }
 }
 
-// Obtain the density of the foreground color against the background color
-// in the graphics buffer covered by the patch
-float getDensity(PGraphics buffer, ColorPatch p, color cBG, color cFG)
+// Obtain the density of the foreground color in the patch area
+float getDensity(PGraphics buffer, ColorPatch p, color cFG)
 {
-  float r = 0.0;
-  float g = 0.0;
-  float b = 0.0;
+  float countFG = 0;
   for (PVector v : p.points) {
     color c = buffer.get((int)(v.x - p.xMin), (int)(v.y - p.yMin));
-    r += red(c);
-    g += green(c);
-    b += blue(c);
+    if (c == cFG) countFG++;
   }
-  color avgColor = color(r / p.points.size(), g / p.points.size(), b / p.points.size());
-  float bgDist = rgbDistance(avgColor, cBG);
-  float fgDist = rgbDistance(avgColor, cFG);
-  return bgDist / (bgDist + fgDist);
+  return countFG / p.points.size();
 }
