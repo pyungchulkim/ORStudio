@@ -126,30 +126,22 @@ class ColorPatch
       return;
       
     for (int i = 0; i < contourPoints.size(); i++) {
-      PVector last = contourPoints.get(i);  // last sorted
-      float minDist = Float.MAX_VALUE;
-      int minIdx = -1;
+      PVector last = contourPoints.get(i);  // last connected or new start
+      
       for (int j = i + 1; j < contourPoints.size(); j++) {
         PVector v = contourPoints.get(j);
-        // optimization: stop search if this is already a neighbor
         if (abs(last.x - v.x) <= 1.0 && abs(last.y - v.y) <= 1.0) {
-          minIdx = j;
+          // a neighbor: pick it up and continue
+          PVector t1 = contourPoints.get(i + 1);
+          PVector t2 = contourPoints.get(j);
+          float tx = t1.x, ty = t1.y;
+          t1.x = t2.x; t1.y = t2.y;
+          t2.x = tx; t2.y = ty;
           break;
         }
-        float dist = last.dist(v);
-        if (dist < minDist) {
-          minIdx = j;
-          minDist = dist;
-        }
-      }
-      if (minIdx >= 0) {  // nearest to last is found; put it at last+1
-        PVector t1 = contourPoints.get(i + 1);
-        PVector t2 = contourPoints.get(minIdx);
-        PVector tmp = new PVector(t1.x, t1.y);
-        t1.x = t2.x; t1.y = t2.y;
-        t2.x = tmp.x; t2.y = tmp.y;
       }
     }
+    
     contourPtsSorted = true;
   }
 
