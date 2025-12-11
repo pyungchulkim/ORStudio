@@ -26,11 +26,12 @@ class ColorPatch
   public boolean transParsed;  // flag if transition parameters have been parsed.
   public int transRefIdx;  // transition reference patch index
   public ArrayList<int[]> transRules;  // transition rules. [0]: type, [1]: delta
+  public color[] texture; // texture cache of the patch
   public int textureType; // texture info used in the cache
   public int textureAxis;
   public int textureGap;
   public int textureBG;
-  public color[] texture; // texture representation of the patch
+  public boolean contourPtsSorted;  // flag if contour points are sorted
   
   // default constructor
   public ColorPatch() {}
@@ -41,35 +42,6 @@ class ColorPatch
     this.id = id;
     points = pts;
     contourPoints = cpts;
-    
-    // Sort contour points in the order of proximity so it forms
-    // continous lines as possible, although it may have
-    // split or disjoint lines
-    for (int i = 0; i < contourPoints.size(); i++) {
-      PVector last = contourPoints.get(i);  // last sorted
-      float minDist = Float.MAX_VALUE;
-      int minIdx = -1;
-      for (int j = i + 1; j < contourPoints.size(); j++) {
-        PVector v = contourPoints.get(j);
-        // optimization: stop search if this is already a neighbor
-        if (abs(last.x - v.x) <= 1.0 && abs(last.y - v.y) <= 1.0) {
-          minIdx = j;
-          break;
-        }
-        float dist = last.dist(v);
-        if (dist < minDist) {
-          minIdx = j;
-          minDist = dist;
-        }
-      }
-      if (minIdx >= 0) {  // nearest to last is found; put it at last+1
-        PVector t1 = contourPoints.get(i + 1);
-        PVector t2 = contourPoints.get(minIdx);
-        PVector tmp = new PVector(t1.x, t1.y);
-        t1.x = t2.x; t1.y = t2.y;
-        t2.x = tmp.x; t2.y = tmp.y;
-      }
-    }
     
     // Set the dimension
     xMin = Integer.MAX_VALUE;
@@ -116,6 +88,8 @@ class ColorPatch
 
     gGap = cGap = 0; // set by updateGap() later
     transParsed = false;
+    texture = null;
+    contourPtsSorted = false;
   }
   
   // Copy constructor for a shallow copy to experiment all while keeping the shape and location
@@ -135,13 +109,50 @@ class ColorPatch
     gGap = p.gGap; 
     cGap = p.cGap;
     transParsed = false;
+    texture = p.texture;
     textureType = p.textureType;
     textureAxis = p.textureAxis;
     textureGap = p.textureGap;
     textureBG = p.textureBG;
-    texture = p.texture;
+    contourPtsSorted = p.contourPtsSorted;
   }
   
+  // Sort contour points in the order of proximity so it forms
+  // continous lines as possible, although it may have
+  // split or disjoint lines
+  public void sortContourPts() 
+  {
+    if (contourPtsSorted)
+      return;
+      
+    for (int i = 0; i < contourPoints.size(); i++) {
+      PVector last = contourPoints.get(i);  // last sorted
+      float minDist = Float.MAX_VALUE;
+      int minIdx = -1;
+      for (int j = i + 1; j < contourPoints.size(); j++) {
+        PVector v = contourPoints.get(j);
+        // optimization: stop search if this is already a neighbor
+        if (abs(last.x - v.x) <= 1.0 && abs(last.y - v.y) <= 1.0) {
+          minIdx = j;
+          break;
+        }
+        float dist = last.dist(v);
+        if (dist < minDist) {
+          minIdx = j;
+          minDist = dist;
+        }
+      }
+      if (minIdx >= 0) {  // nearest to last is found; put it at last+1
+        PVector t1 = contourPoints.get(i + 1);
+        PVector t2 = contourPoints.get(minIdx);
+        PVector tmp = new PVector(t1.x, t1.y);
+        t1.x = t2.x; t1.y = t2.y;
+        t2.x = tmp.x; t2.y = tmp.y;
+      }
+    }
+    contourPtsSorted = true;
+  }
+
   // Add another patch into this one.
   // Keep all the color and master info unchanged, but
   // just to add the area of another patch.
@@ -158,7 +169,11 @@ class ColorPatch
     xMin = min(xMin, p.xMin);
     xMax = max(xMax, p.xMax);
     yMin = min(yMin, p.yMin);
-    yMax = max(yMax, p.yMax);   
+    yMax = max(yMax, p.yMax);
+    
+    // Invalidate texture cache
+    texture = null;
+    contourPtsSorted = false;
   }
   
   // Serialize to save
@@ -196,6 +211,8 @@ class ColorPatch
     gGap = ois.readFloat();
     cGap = ois.readFloat();
     transParsed = false;
+    texture = null;
+    contourPtsSorted = false;
   }
   
   // Set the color from a Munsell color. Return if changed.

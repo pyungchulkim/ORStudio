@@ -78,8 +78,15 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
     }
     case txtTypeContour: // repeat segment of contour lines of big patches in the painting
     {
+      // Make sure that contour points of all patches are sorted
+      for (ColorPatch p : owner.patches) {
+        p.sortContourPts();
+      }
+      
+      int minBatchSize = 2;
+      int maxBatchSize = 100;
       float lastDensity = 0;
-      int batchSize = 2;
+      int batchSize = minBatchSize;
       int countTotal = 0;
       while (lastDensity < density) {
         while (batchSize-- > 0) {
@@ -125,18 +132,18 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
           }
           buffer.endShape();
           countTotal++;
-        }        
+        }  
         // After done each batch, adjust the next batch size based upon
         // the density process so that each batch increases the density
         // roughly about [gap to goal, 0.05].
         lastDensity = getDensity(buffer, currPatch, cForeground);
         if (lastDensity <= 0.001) {  // almost nothing has been drawn yet
-          batchSize = 2;
+          batchSize = minBatchSize;
         }
         else {
           float dd = lastDensity / countTotal;  // avg density delta per count
           float goal = min(0.05, density - lastDensity);
-          batchSize = (int)min(100, max(1, goal / max(dd, Float.MIN_VALUE)));
+          batchSize = (int)min(maxBatchSize, max(1, goal / max(dd, Float.MIN_VALUE)));
         }
       }
       break;
