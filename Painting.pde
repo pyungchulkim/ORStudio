@@ -480,6 +480,14 @@ class Painting
         }
         break;
         
+      case 'D':
+      case 'd':  // simplify the number of patches used by 10% or -1
+        if (what == areaViewColors) {
+          simplifyPatches();
+          bUpdateStats = true;
+        }
+        break;
+        
       case 'H':
       case 'h':  // increase hue by hueDegreePerSector.
                  // Note that it may lose high chroma as hue changes
@@ -1100,6 +1108,58 @@ class Painting
       }
     }
   }  
+
+  // Simplify patches by reducing the number of patches used by 10% or 1.
+  // Reducing patches are done by merging smaller patches into their neighbors
+  void simplifyPatches()
+  {
+    if (patches.size() <= 1)
+      return;
+
+    cursor(WAIT);
+  
+    // Sort patches in ascending order of area
+    List<ColorPatch> list = new LinkedList<ColorPatch>();
+    for (ColorPatch p : patches) list.add(p);
+    Collections.sort(list, Comparator.comparing((ColorPatch p) -> p.getAreaSize()));
+    
+    // Calculate # of patches to reduce
+    int nReduce = max(round(patches.size() * 0.1), 1);
+    // Include all tiny patches, if any
+    while (list.get(nReduce - 1).getAreaSize() < 10)
+      nReduce++;
+      
+    while (nReduce-- > 0) {
+      ColorPatch minPatch = list.get(nReduce);
+      
+      // Find a neighboring patch by looking at pixels immediate next to contour
+      ColorPatch neighborPatch = null;
+      float minGap = Float.MAX_VALUE;
+      for (int i = 0; i < minPatch.contourPoints.size(); i += 50) {  // fast speed by skipping
+        PVector v = minPatch.contourPoints.get(i);
+        int[][] d = {{0, -1}, {-1, 0}, {1, 0}, {0, 1}};  // delta for neighbor pixel
+        for (int j = 0; j < d.length; j++) {
+          int pi = findPatchIdx((int)v.x + d[j][0], (int)v.y + d[j][1]);
+          if (pi >= 0 && patches.get(pi).id != minPatch.id) {
+            float gap = minPatch.mColor.getGap(patches.get(pi).mColor);
+            if (gap < minGap) {  // merge to a visually similar patch if there are many neighbors
+              neighborPatch = patches.get(pi);
+              minGap = gap;
+            }
+          }
+        }
+      }
+      
+      if (neighborPatch != null) {
+        // Merge to the neighbor
+        minPatch.setColor(neighborPatch.mColor);
+        neighborPatch.add(minPatch);
+        patches.remove(minPatch);
+      }
+    }
+
+    cursor(ARROW);
+  }
 }
 
 // Build a set of color patches from the image by boundary.
