@@ -476,6 +476,7 @@ class Painting
       case 's':  // simplify the number of colors used by 10% or -1
         if (what == areaViewColors) {
           simplifyColors();
+          currPatchIdx = -1;  // invalidate the global reference to patches by index
           bUpdateStats = true;
         }
         break;
@@ -484,6 +485,7 @@ class Painting
       case 'd':  // simplify the number of patches used by 10% or -1
         if (what == areaViewColors) {
           simplifyPatches();
+          currPatchIdx = -1;  // invalidate the global reference to patches by index
           bUpdateStats = true;
         }
         break;
