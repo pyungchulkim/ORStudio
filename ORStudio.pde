@@ -530,7 +530,8 @@ void doAction(int area)
       if (mouseButton == LEFT && imgWork != null) {
         // Get the image file name from dialog
         pathName = null;
-        selectOutput("Enter a file name to save the image:", "pathNameSelected", new File("./*.png"));
+        String defaultName = "./" + ((currPaintingIdx >= 0) ? currPaintingIdx : "") + ".png";
+        selectOutput("Enter a file name to save the image:", "pathNameSelected", new File(defaultName));
         while (pathName == null) delay(200); // Wait until a Input dialog is done
         if (pathName.equals(""))  // Dialog is cancelled - do nothing
           break;
@@ -544,7 +545,8 @@ void doAction(int area)
       if (mouseButton == LEFT && currPaintingIdx >= 0) {
         // Get the image file name from dialog
         pathName = null;
-        selectOutput("Enter a file name to save the palette of the painting:", "pathNameSelected", new File("./*.png"));
+        String defaultName = "./" + ((currPaintingIdx >= 0) ? currPaintingIdx : "") + "-plt.png";
+        selectOutput("Enter a file name to save the palette of the painting:", "pathNameSelected", new File(defaultName));
         while (pathName == null) delay(200); // Wait until a Input dialog is done
         if (pathName.equals(""))  // Dialog is cancelled - do nothing
           break;
