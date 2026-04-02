@@ -1134,19 +1134,21 @@ class Painting
     while (nReduce-- > 0) {
       ColorPatch minPatch = list.get(nReduce);
       
-      // Find a neighboring patch by looking at pixels immediate next to contour
+      // Find a neighboring patch by looking at pixels near the contour
+      int[][] d = {{0, -1}, {-1, -1}, {-1, 0}, {-1, 1}, {0, 1}, {1, 1}, {1, 0}, {1, -1}};
       ColorPatch neighborPatch = null;
       float minGap = Float.MAX_VALUE;
-      for (int i = 0; i < minPatch.contourPoints.size(); i += 50) {  // fast speed by skipping
-        PVector v = minPatch.contourPoints.get(i);
-        int[][] d = {{0, -1}, {-1, 0}, {1, 0}, {0, 1}};  // delta for neighbor pixel
-        for (int j = 0; j < d.length; j++) {
-          int pi = findPatchIdx((int)v.x + d[j][0], (int)v.y + d[j][1]);
-          if (pi >= 0 && patches.get(pi).id != minPatch.id) {
-            float gap = minPatch.mColor.getGap(patches.get(pi).mColor);
-            if (gap < minGap) {  // merge to a visually similar patch if there are many neighbors
-              neighborPatch = patches.get(pi);
-              minGap = gap;
+      for (int s = 1; s <= 5 && neighborPatch == null; s++) {
+        for (int i = 0; i < minPatch.contourPoints.size(); i += 50) {  // fast speed by skipping
+          PVector v = minPatch.contourPoints.get(i);
+          for (int j = 0; j < d.length; j++) {
+            int pi = findPatchIdx((int)v.x + s * d[j][0], (int)v.y + s * d[j][1]);
+            if (pi >= 0 && patches.get(pi).id != minPatch.id) {
+              float gap = minPatch.mColor.getGap(patches.get(pi).mColor);
+              if (gap < minGap) {  // merge to a visually similar patch if there are many neighbors
+                neighborPatch = patches.get(pi);
+                minGap = gap;
+              }
             }
           }
         }

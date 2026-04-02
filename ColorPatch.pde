@@ -338,8 +338,8 @@ class ColorPatch
 
     xMin *= xScale;
     xMax *= xScale;
-    yMin *= xScale;
-    yMax *= xScale;
+    yMin *= yScale;
+    yMax *= yScale;
   }
   
   // Create string for the patch statistics
