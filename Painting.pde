@@ -476,7 +476,6 @@ class Painting
       case 's':  // simplify the number of colors used by 10% or -1
         if (what == areaViewColors) {
           simplifyColors();
-          currPatchIdx = -1;  // invalidate the global reference to patches by index
           bUpdateStats = true;
         }
         break;
@@ -485,6 +484,9 @@ class Painting
       case 'd':  // simplify the number of patches used by 10% or -1
         if (what == areaViewColors) {
           simplifyPatches();
+          // Invalidate transition cache as some reference index became invalid
+          for (ColorPatch p : patches)
+            p.transParsed = false;
           currPatchIdx = -1;  // invalidate the global reference to patches by index
           bUpdateStats = true;
         }
@@ -534,6 +536,9 @@ class Painting
           // cleanup
           for (ColorPatch p : cleanup)
             patches.remove(p);
+          // Invalidate transition cache as some reference index became invalid
+          for (ColorPatch p : patches)
+            p.transParsed = false;
           currPatchIdx = -1;  // invalidate the global reference to patches by index
           
           bUpdateStats = true;
@@ -655,6 +660,10 @@ class Painting
   // Find the patch index by id
   public int findPatchIdx(int id)
   {
+    if (id < 0) return -1;
+    // Optimize for most cases where no patches were deleted or merged
+    if (id < patches.size() && patches.get(id).id == id)
+      return id;
     for (int i = 0; i < patches.size(); i++) {
       if (patches.get(i).id == id)
         return i;
@@ -824,7 +833,7 @@ class Painting
   {
     // Populate transition parameters from the spec
     for (ColorPatch p : patches)
-      p.parseTransParams();
+      p.parseTransParams(this);
 
     // First pass: initialize all patches as black (unspecified).
     for (ColorPatch p : patches) {
@@ -894,7 +903,7 @@ class Painting
   
     // Populate transition parameters from the spec
     for (ColorPatch p : patches)
-      p.parseTransParams();
+      p.parseTransParams(this);
 
     // Scale master tension by the scale factor
     for (ColorPatch p : patches) {
@@ -938,7 +947,7 @@ class Painting
     
     // Populate transition parameters from the spec
     for (ColorPatch p : patches)
-      p.parseTransParams();
+      p.parseTransParams(this);
 
     // Scale master tension by the scale factor
     for (ColorPatch p : patches) {

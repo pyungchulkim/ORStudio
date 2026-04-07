@@ -273,9 +273,9 @@ class ColorPatch
     return bChanged;
   }
 
-  // Parse master transition string into rules.
+  // Parse master transition string into cache with ref patch idx and rules.
   // A non-empty transition string has the following format:
-  // "<ref>{/rule}", where 'ref' indicates referenced patch index, and
+  // "<ref>{/rule}", where 'ref' indicates referenced patch id, and
   // each rule 'rule', seperated by '/', indicates movement of hue/chroma
   // relative to the hue/chroma of reference, as follows:
   //  "H<delta>" - Move hue by delta. Delta is a directional unit of 40 hue sectors.
@@ -284,7 +284,7 @@ class ColorPatch
   //  "A<delta>" - Move by delta distance in any direction. This rule can appear
   //               at the end; no rule can be added after this.
   //  "O"        - Move to the opposite crossing the center of color sphere.
-  public void parseTransParams()
+  public void parseTransParams(Painting owner)
   {
     if (transParsed)
       return;  // done already
@@ -297,7 +297,8 @@ class ColorPatch
     String[] data = masterTransition.split("/");
     int i = 0;
     try {
-      transRefIdx = Integer.parseInt(data[i++]);  // reference index
+      int refId = Integer.parseInt(data[i++]);  // reference id
+      transRefIdx = owner.findPatchIdx(refId);
       while (i < data.length) {
         int[] r = new int[2];
         r[0] = data[i].charAt(0);
