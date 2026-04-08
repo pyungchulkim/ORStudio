@@ -320,8 +320,8 @@ class Painting
             p.masterTension = p.cGap;
         break;
         
-      case '+':  // scale up gray or tension by 10% from the current average
-      case '-':  // scale down gray or tension by 10% from the current average
+      case '+':  // scale up gray by 2 or tension by 10% from the current average
+      case '-':  // scale down gray by 2 or tension by 10% from the current average
         dir = (how == '+') ? 1 : -1;
         if (what == areaViewMGray) {
           // Calculate the average
@@ -333,12 +333,11 @@ class Painting
             n++;
           }
           avg /= n;
-          // Scale by 10%
+          // Scale one step (2)
           for (ColorPatch p : patches) {
             if (p.masterGray == 0) continue;
-            p.masterGray += dir * (p.masterGray - avg) * 0.1;
-            p.masterGray = min(18, p.masterGray);  // cap it within [2, 18]
-            p.masterGray = max(2, p.masterGray);
+            p.masterGray += dir * ((p.masterGray > avg) ? 2 : -2);
+            p.masterGray = max(2, min(18, p.masterGray));  // cap it within [2, 18]
           }
         }
         if (what == areaViewMTension) {
@@ -355,46 +354,41 @@ class Painting
           for (ColorPatch p : patches) {
             if (p.masterTension == 0) continue;
             p.masterTension += dir * (p.masterTension - avg) * 0.1;
-            p.masterTension = min(40, p.masterTension);  // cap it within [0.1, 40]
-            p.masterTension = max(0.1, p.masterTension);
+            p.masterTension = max(0.1, min(40, p.masterTension));  // cap it within [0.1, 40]
           }
         }
         break;
         
-      case '>':  // shift up gray or tension by 1.0 or chroma by 2.0
-      case '<':  // shift down gray or tension by 1.0 or chroma by 2.0
+      case '>':  // shift up gray by 2 or tension by 1.0 or chroma by 2.0
+      case '<':  // shift down gray by 2 or tension by 1.0 or chroma by 2.0
         dir = (how == '>') ? 1 : -1;
         if (what == areaViewMGray) {
           for (ColorPatch p : patches) {
             if (p.masterGray == 0) continue;
-            p.masterGray += dir;
-            p.masterGray = min(18, p.masterGray);  // cap it within [2, 18]
-            p.masterGray = max(2, p.masterGray);
+            p.masterGray += dir * 2;
+            p.masterGray = max(2, min(18, p.masterGray));  // cap it within [2, 18]
           }
         }
         if (what == areaViewMTension) {
           for (ColorPatch p : patches) {
             if (p.masterTension == 0) continue;
             p.masterTension += dir;
-            p.masterTension = min(40, p.masterTension);  // cap it within [0.1, 40]
-            p.masterTension = max(0.1, p.masterTension);
+            p.masterTension = max(0.1, min(40, p.masterTension));  // cap it within [0.1, 40]
           }
         }        
         if (what == areaViewMHue) {
-          dir *= 2;
           for (ColorPatch p : patches) {
             if (p.masterChroma <= 0) continue;
-            p.masterChroma += dir;
+            p.masterChroma += dir * 2;
             // cap it within max chroma
             p.masterChroma = max(2, min(colorTable.getMaxChroma(p.masterHue), p.masterChroma));
           }
         }
         if (what == areaViewColors) {
-          dir *= 2;
           for (ColorPatch p : patches) {
             if (p.mColor.isGray()) continue;
             MunsellColor mc = new MunsellColor(p.mColor);
-            mc.chroma += dir;
+            mc.chroma += dir * 2;
             // cap it within max chroma of the value
             mc.chroma = max(2, min(colorTable.getMaxChroma(mc.hueDegree, mc.value), mc.chroma));
             p.setColor(mc);
