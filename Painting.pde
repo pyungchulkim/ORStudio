@@ -123,7 +123,7 @@ class Painting
     for (ColorPatch p : org.patches)
       newPatches.add(new ColorPatch(p));
     patches = newPatches;
-    centroid = new MunsellColor(org.centroid); //<>//
+    centroid = new MunsellColor(org.centroid);
     tension = org.tension;
     tensionComplexity = org.tensionComplexity;
     complexity = org.complexity;
@@ -599,7 +599,7 @@ class Painting
   // Create string for the painting statistics
   public String getStatString()
   {
-    return "# of Patches: " + patches.size() + //<>//
+    return "# of Patches: " + patches.size() +
            "\nPaint Coverage: " + String.format("%.1f%%", coverage * 100) +
            "\nCentroid: " + centroid.getString() +
            "\nTension: " + String.format("%.1f", tension) +
@@ -772,7 +772,7 @@ class Painting
         if (abs(mp.masterTension - centroid.getGap(c)) > tensionGap)
         continue;
       }
-      if (mp.transRefIdx >= 0 && mp.transRefIdx < patches.size() && mp.transRefIdx != mp.id) {
+      if (mp.transRefIdx >= 0 && patches.get(mp.transRefIdx).id != mp.id) {
         // master transition is specified; match if it complies with the transition
         
         MunsellColor mcRef = patches.get(mp.transRefIdx).mColor;
@@ -850,14 +850,12 @@ class Painting
         if (p.transRefIdx < 0 || !p.mColor.isGray())
           continue;  // done - either no reference or colored already
           
-        if (p.transRefIdx >= patches.size())
-          continue;  // an invalid reference patch
-          
         MunsellColor mcRef = patches.get(p.transRefIdx).mColor;
-        if (p.transRefIdx != p.id && mcRef.isGray())
+        if (patches.get(p.transRefIdx).id != p.id && mcRef.isGray())
           continue;  // wait until reference patch has been illustrated
 
-        // Now, interpret the transition rule with the reference
+        // Now, either self-reference or referenced patch has been illustration -
+        // interpret the transition rule with the reference
         float hueDegree = mcRef.hueDegree;
         float chroma = mcRef.chroma;
         float value = mcRef.value;
@@ -882,8 +880,8 @@ class Painting
         
         float r = radians(hueDegree);
         p.setColor(new MunsellColor(chroma * cos(r), chroma * sin(r), value));
-
-        bDone = false;  // a new illustrated patch triggers another loop
+        if (!p.mColor.isGray())
+          bDone = false;  // a new illustrated patch triggers another loop
       }
     }
   }
