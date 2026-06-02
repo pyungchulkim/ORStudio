@@ -549,23 +549,29 @@ class Painting
               idMax = p.id;
             if (p.rgbColor == colorSelected)
               orgs.add(p);
-          }         
-          // Prepare an image with these patches
-          PImage imgTemp = createImage(imgWidth, imgHeight, RGB);  // black by default
+          }
           for (ColorPatch o : orgs) {
+            // Prepare an image with these patches
+            PImage imgTemp = createImage(imgWidth, imgHeight, RGB);  // black by default
             for (PVector pv : o.points) {
                   imgTemp.set((int)pv.x, (int)pv.y, colorSelected);
             }
-          }          
-          // Build a painting from the image
-          Painting paintingTemp = buildPatchesByBoundary(imgTemp, color(0), imgTemp);
-          // Delete originals and add the new patches
+            // Build a painting from the image
+            Painting paintingTemp = buildPatchesByBoundary(imgTemp, color(0), imgTemp);
+            // Add the new patches with original master specifications
+            for (ColorPatch p : paintingTemp.patches) {
+              p.id = ++idMax;  // make sure ID's are uniquely generated
+              p.masterGray = o.masterGray;
+              p.masterHue = o.masterHue;
+              p.masterChroma = o.masterChroma;
+              p.masterTension = o.masterTension;
+              p.masterTransition = o.masterTransition;
+              patches.add(p);
+            }
+          }
+          // Delete originals
           for (ColorPatch o : orgs)
             patches.remove(o);
-          for (ColorPatch p : paintingTemp.patches) {
-            p.id = ++idMax;  // make sure ID's are uniquely generated
-            patches.add(p);
-          }
           currPatchIdx = -1;  // invalidate the global reference to patches by index
           
           bUpdateStats = true;
