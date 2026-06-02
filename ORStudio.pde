@@ -317,6 +317,7 @@ String pathName = null;  // file name from the dialog
 PImage imgInput = null;  // input image to generate patches
 PImage imgWork = null;  // image at work and used for display at screen
 color colorSelected = color(220,63,78);  // selected color. 5.0R-10-14 by default
+color colorContour = color(255,255,0);  // contour color
 color[] colorPalette = { color(255), color(0), color(255,0,0), color(0,255,0), color(0,0,255), 
                          color(255,255,0), color(255,0,255), color(0,255,255), colorBG, colorBG }; // color palette
 ColorTable colorTable = new ColorTable();  // RGB/Munsell conversion table
@@ -898,8 +899,10 @@ void keyPressed()
     return;
   }
 
-  if (key == 'o' || key == 'O')
+  if (key == 'o' || key == 'O') {
     bShowContour = !bShowContour;
+    colorContour = colorSelected;
+  }
   else if (key == 'l' || key == 'L')
     bShowReferenceLine = !bShowReferenceLine;
   else if (key == 26) {  // ctrl-Z: undo the last edit of the painting if still at the same painting

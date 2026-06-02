@@ -541,7 +541,7 @@ class ColorPatch
     // Draw contour
     if (bShowContour) {
       for (PVector p : contourPoints) {
-            img.set((int)p.x, (int)p.y, (bTexture) ? colorBG : colorEdge);
+            img.set((int)p.x, (int)p.y, (bTexture) ? colorBG : colorContour);
       }
     }
   }
