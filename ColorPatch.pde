@@ -92,12 +92,14 @@ class ColorPatch
     contourPtsSorted = false;
   }
   
-  // Copy constructor for a shallow copy to experiment all while keeping the shape and location
+  // Copy constructor - deep copy everything
   public ColorPatch(ColorPatch p)
   {
     id = p.id;
-    points = p.points;  // shallow copy
-    contourPoints = p.contourPoints;
+    points = new ArrayList<PVector>();
+    for (PVector v : p.points) points.add(v.copy());
+    contourPoints = new ArrayList<PVector>();
+    for (PVector v : p.contourPoints) contourPoints.add(v.copy());
     xMin = p.xMin; xMax = p.xMax; yMin = p.yMin; yMax = p.yMax;
     masterGray = p.masterGray;
     masterHue = p.masterHue;
@@ -149,7 +151,7 @@ class ColorPatch
   // Keep all the color and master info unchanged, but
   // just to add the area of another patch.
   // NOTE: the contourPoints will be simply added even if
-  // added contour lines may be no longer contour after added.
+  // added contour lines may be no longer continuous after added.
   public void add(ColorPatch p)
   {
     assert mColor.isEqual(p.mColor) : "Cannot add a patch of different color into another.";

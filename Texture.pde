@@ -36,7 +36,7 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
   if (pi < 0)
     return null; // No patch is found with the id
   ColorPatch currPatch = owner.patches.get(pi);
-    
+
   float lineWidth = map(density, 0, 1, 1, 3);  // use thicker lines for higher density  
   color cBackground = colorTable.munsellToRGB(mcBackground);
   color cForeground = colorTable.munsellToRGB(mcForeground);
@@ -88,7 +88,7 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
       float lastDensity = 0;
       int batchSize = minBatchSize;
       int countTotal = 0;
-      while (lastDensity < density) {
+      while (lastDensity < density && countTotal < 1000000) {
         while (batchSize-- > 0) {
           // randomly select a patch to use that:
           // - the shape is not cut by the edge of the image; and
