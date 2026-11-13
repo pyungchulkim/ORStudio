@@ -2,18 +2,20 @@
 final int txtTypeCrossHatching = 0;  // cross-hatching lines
 final int txtTypeContour = 1;  // repeating contour lines in all patches in the painting
 final int txtTypeGrain = 2;  // small random shaped blots yielding grainy effect
-final int txtTypeUniformHorizonal = 3;  // equal-spaced horizontal lines
-final int txtTypeUniformVertical = 4;  // equal-spaced vertical lines 
+final int txtTypeGradient = 3;  // gradient
+final int txtTypeBrush = 4;  // gradient
 final int txtTypeFractalBranch = 5;  // fractally grown tree branches
-final int txtTypeFractalEx = 6;
+final int txtTypeUniformHorizonal = 6;  // equal-spaced horizontal lines
+final int txtTypeUniformVertical = 7;  // equal-spaced vertical lines 
 final String[] txtTypeNames = {
     "CROSS",
     "CONTOUR",
     "GRAIN",
-    "HORIZONTAL",
-    "VERTICAL",
+    "GRADIENT",
+    "BRUSH",
     "FRTL-BRANCH",
-    "FRRL-EX"
+    "HORIZONTAL",
+    "VERTICAL"
 };
 
 // The axis on which background/foreground color will lie
@@ -49,7 +51,7 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
 
   buffer.beginDraw();
   buffer.background(cBackground);
-  if (cBackground == cForeground) {  // nothing further to be done
+  if (cBackground == cForeground || currPatch.getAreaSize() < 10) {  // nothing further to be done
     buffer.endDraw();
     return buffer;
   }
@@ -175,8 +177,87 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
       }
       break;
     }
+    case txtTypeGradient: // gradient - background color at the top, foreground color at the bottom
+    {
+      for (int i = 0; i < h; i++) {
+        buffer.stroke(lerpColor(cBackground, cForeground, (float)i / h));        
+        buffer.line(0, i, w, i);
+      }
+      break;
+    }
+    case txtTypeBrush: // paint brush loaded with foreground color
+    {
+      // Create a brush tip as opaque white over transparent background
+      int brushSize = min(50, max(10, min(buffer.width, buffer.height) / 5));
+      PGraphics pg = createGraphics((int)(brushSize * 2), brushSize);
+      pg.beginDraw();
+      pg.background(255, 0);  // completely transparent
+      pg.noStroke();
+      float r = brushSize * 0.45;
+      for (int i = 0; i < brushSize; i++) {
+        float a = random(TWO_PI);
+        float rad = r * sqrt(random(1.0));
+        float bx = pg.width * 0.5 + cos(a) * rad;
+        float by = pg.height * 0.5 + sin(a) * rad;
+        float bristleSize = random(1.5, brushSize * 0.05);
+        pg.fill(255, random(256));  // transparent to opaque white
+        pg.ellipse(bx, by, bristleSize * 10.0, bristleSize);
+      }
+      pg.endDraw();
+      PImage brushTip = pg.get();
+      
+      // Now, add the brushstrokes until the target density is achieved
+      buffer.loadPixels();
+      buffer.beginDraw();
+      buffer.imageMode(CENTER);
+      
+      float lastDensity = 0.0;
+      float angleFlow = random(-PI, PI);
+      int countTotal = 0;
+      while (lastDensity < density && countTotal < 1000) {
+        // start a new brushstroke from a random location
+        float x = random(buffer.width);
+        float y = random(buffer.height);
+        float strokeLen = brushSize * random(2.0, 10.0);
+        float stepSize = brushSize * 0.1;
+        int steps = int(strokeLen / stepSize);
+        float baseNoise = noise(x, y, 0);
+        float angle = angleFlow;
+      
+        for (int s = 0; s < steps; s++) {
+          float pickupRate = float(s) / steps + 0.25;
+          // stop the brush has little paint left or went out of boundary
+          if (x < 0 || x >= buffer.width || y < 0 || y >= buffer.height || pickupRate > 0.9)
+            break;
+      
+          // Pick up paint as wet-on-wet while the brush moves
+          color bufferCol = buffer.pixels[(int)y * buffer.width + (int)x];
+          color brushCol = lerpColor(cForeground, bufferCol, pickupRate);
+      
+          // Stroke the textured brush
+          buffer.tint(brushCol);
+          buffer.pushMatrix();
+          buffer.translate(x, y);
+          buffer.rotate(angle);
+          buffer.image(brushTip, 0, 0, brushSize, brushSize);
+          buffer.popMatrix();
+      
+          // Advance along a slightly curved organic trajectory
+          float d = noise(x, y, (s + 1) * 0.03) - baseNoise;
+          angle = angleFlow + d;
+          x += cos(angle) * stepSize;
+          y += sin(angle) * stepSize;
+        }
+
+        // update density after each brushstroke
+        lastDensity = getLerpDensity(buffer, currPatch, cForeground, cBackground);
+        countTotal++;
+      }
+      
+      buffer.endDraw();
+      break;
+    }
     case txtTypeFractalBranch: // fractal - tree branches
-    case txtTypeFractalEx:
     {
       float lastDensity = 0.0;
       while (lastDensity < density) {
@@ -222,7 +303,11 @@ PGraphics drawTexture(Painting owner, int id, MunsellColor mcBackground, Munsell
   buffer.endDraw();
   cursor(ARROW);
   if (debug) {
-    float d = getDensity(buffer, currPatch, cForeground);
+    float d;
+    if (ctrlTextureType == txtTypeBrush)
+      d = getLerpDensity(buffer, currPatch, cForeground, cBackground);
+    else
+      d = getDensity(buffer, currPatch, cForeground);
     if (currPatch.getAreaSize() > 1000 && abs(d - density) > 0.2)
       println("BIG DENSITY GAP:", "id=" + currPatch.id, "size=" + currPatch.getAreaSize(), 
               "desired=" + density, "actual=" + d, "gap=" + (d - density));
@@ -297,4 +382,36 @@ float getDensity(PGraphics buffer, ColorPatch p, color cFG)
     if (c == cFG) countFG++;
   }
   return countFG / p.points.size();
+}
+
+// Obtain the density of the foreground color in the patch area
+// assuming that lerpColor(cBG, cFG, density) was used to paint
+float getLerpDensity(PGraphics buffer, ColorPatch p, color cFG, color cBG)
+{
+  // Calculate the average color in the buffer
+  buffer.loadPixels();
+  long totalR = 0;
+  long totalG = 0;
+  long totalB = 0;
+  for (PVector v : p.points) {
+    color c = buffer.pixels[(int)(v.y - p.yMin) * buffer.width + (int)(v.x - p.xMin)];
+    totalR += (c >> 16) & 0xFF;
+    totalG += (c >> 8)  & 0xFF;
+    totalB +=  c        & 0xFF;
+  }
+  float count = p.points.size();
+  color cAvg = color(totalR / count, totalG / count, totalB / count);
+
+  // Calculate lerpColor factor toward cFG - aka the density
+  float dr = red(cFG)   - red(cBG);
+  float dg = green(cFG) - green(cBG);
+  float db = blue(cFG)  - blue(cBG);
+  float cr = red(cAvg)   - red(cBG);
+  float cg = green(cAvg) - green(cBG);
+  float cb = blue(cAvg)  - blue(cBG);
+
+  // Project onto the line segment and clamp between 0.0 and 1.0
+  float lenSq = dr * dr + dg * dg + db * db;
+  float r = (cr * dr + cg * dg + cb * db) / lenSq;
+  return constrain(r, 0.0, 1.0);
 }

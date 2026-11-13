@@ -92,14 +92,14 @@ class ColorPatch
     contourPtsSorted = false;
   }
   
-  // Copy constructor - deep copy everything
+  // Copy constructor - deep copy except coordinates themselves
   public ColorPatch(ColorPatch p)
   {
     id = p.id;
     points = new ArrayList<PVector>();
-    for (PVector v : p.points) points.add(v.copy());
+    points.addAll(p.points);
     contourPoints = new ArrayList<PVector>();
-    for (PVector v : p.contourPoints) contourPoints.add(v.copy());
+    contourPoints.addAll(p.contourPoints);
     xMin = p.xMin; xMax = p.xMax; yMin = p.yMin; yMax = p.yMax;
     masterGray = p.masterGray;
     masterHue = p.masterHue;
@@ -111,11 +111,7 @@ class ColorPatch
     gGap = p.gGap; 
     cGap = p.cGap;
     transParsed = false;
-    texture = p.texture;
-    textureType = p.textureType;
-    textureAxis = p.textureAxis;
-    textureGap = p.textureGap;
-    textureBG = p.textureBG;
+    texture = null;  // need to regenerate later when needed
     contourPtsSorted = p.contourPtsSorted;
   }
   
@@ -543,7 +539,7 @@ class ColorPatch
     // Draw contour
     if (bShowContour) {
       for (PVector p : contourPoints) {
-            img.set((int)p.x, (int)p.y, (bTexture) ? colorBG : colorContour);
+            img.set((int)p.x, (int)p.y, colorContour);
       }
     }
   }
